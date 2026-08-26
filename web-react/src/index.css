@@ -1,0 +1,248 @@
+/* ================================================================
+   DIRECTION CONTRACT — 班级日志 · 一周一页 (seed: 1ebb63b5)
+   THESIS: 把每天速记的倾听记录装订成一周一页的班级故事簿；
+     拒绝「任何后台」的中性卡片网格。
+   OWN-WORLD: 米白纸面底 #faf6ee / 墨黑 #2f2a24 / 朱砂章 #e05d3d /
+     叶绿 #7fb069 / 蜜黄 #f2c14e；红色橡皮日期章、糖果标签贴、
+     相纸白边照片卡、儿童原话手写体引用。
+   STORY: 老师每天速记 → 周五回顾成故事；每条记录都是日志本上
+     的一格，保存即盖章归档。
+   FIRST VIEWPORT: 今日格子占半屏，本周日历条横贯其上，
+     待补提醒贴在右上；主操作「去登记」位于日历条右端。
+   FORM: assigned direction #5, seed key 1ebb63b5。
+   FINISH: unreviewed and undocumented is unfinished; this build ends
+     with the finish review, the verdict, DESIGN.md, and every shipping
+     raster carrying its provenance.
+   ================================================================ */
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "@fontsource/noto-serif-sc/400.css";
+@import "@fontsource/noto-serif-sc/600.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: "PingFang SC", "HarmonyOS Sans SC", "MiSans", -apple-system, "Microsoft YaHei", sans-serif;
+  --font-serif: "Noto Serif SC", "Songti SC", "SimSun", serif;
+  --font-hand: "Kaiti SC", "STKaiti", "KaiTi", "楷体", var(--font-sans);
+}
+
+:root {
+  /* 纸面 · 浅色 */
+  --background: 40 44% 96%;          /* 暖米白纸面 */
+  --foreground: 30 12% 15%;          /* 墨黑 */
+  --card: 40 50% 99%;                /* 纸卡 */
+  --card-foreground: 30 12% 15%;
+  --popover: 40 50% 99%;
+  --popover-foreground: 30 12% 15%;
+  --primary: 160 38% 36%;            /* 叶绿（墨绿调）*/
+  --primary-foreground: 40 50% 98%;
+  --secondary: 42 32% 90%;           /* 牛皮纸淡 */
+  --secondary-foreground: 30 10% 28%;
+  --muted: 42 26% 89%;
+  --muted-foreground: 30 8% 38%;     /* 铅笔灰（对比度≥4.5）*/
+  --accent: 43 65% 88%;              /* 蜜黄便签 */
+  --accent-foreground: 30 45% 24%;
+  --destructive: 8 72% 48%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 35 22% 82%;              /* 纸格线 */
+  --input: 35 20% 78%;
+  --ring: 160 38% 42%;
+  --radius: 0.875rem;
+  /* 世界观专属 */
+  --stamp: 11 71% 56%;               /* 朱砂章 */
+  --stamp-ink: 11 60% 46%;
+  --candy-green: 152 48% 52%;
+  --candy-yellow: 42 88% 62%;
+  --candy-pink: 350 84% 74%;
+  --candy-blue: 204 76% 64%;
+  --candy-purple: 262 60% 68%;
+  --grid-line: 38 25% 87%;
+  --shadow-warm: 20 30% 55%;
+}
+
+.dark {
+  /* 纸面 · 夜写（台灯下）*/
+  --background: 30 10% 10%;
+  --foreground: 40 30% 92%;
+  --card: 30 9% 13.5%;
+  --card-foreground: 40 30% 92%;
+  --popover: 30 9% 13%;
+  --popover-foreground: 40 30% 92%;
+  --primary: 152 40% 55%;
+  --primary-foreground: 160 45% 10%;
+  --secondary: 30 7% 19%;
+  --secondary-foreground: 40 20% 85%;
+  --muted: 30 7% 18%;
+  --muted-foreground: 38 14% 72%;
+  --accent: 42 30% 22%;
+  --accent-foreground: 44 70% 80%;
+  --destructive: 6 60% 52%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 30 8% 22%;
+  --input: 30 8% 24%;
+  --ring: 152 40% 55%;
+  --stamp: 11 70% 62%;
+  --stamp-ink: 11 65% 68%;
+  --grid-line: 30 8% 20%;
+  --shadow-warm: 0 0% 0%;
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+  }
+  html { -webkit-font-smoothing: antialiased; }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    font-family: var(--font-sans);
+    font-variant-numeric: tabular-nums;
+    /* 纸面肌理：横向格线 + 纤维噪点双层 */
+    background-image:
+      url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)' opacity='0.028'/%3E%3C/svg%3E"),
+      linear-gradient(hsl(var(--grid-line) / .3) 1px, transparent 1px);
+    background-size: 160px 160px, 100% 32px;
+  }
+  /* 标题衬线：页头/卡片标题用宋体 */
+  h1, h2 { font-family: var(--font-serif); letter-spacing: 0.01em; }
+  /* 浏览器原生件主题化 */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border)); border-radius: 8px;
+    border: 2px solid hsl(var(--background));
+  }
+  ::-webkit-scrollbar-thumb:hover { background: hsl(var(--input)); }
+  ::-webkit-scrollbar-track { background: transparent; }
+  * { scrollbar-color: hsl(var(--border)) transparent; scrollbar-width: thin; }
+  :focus-visible {
+    outline: 2px solid hsl(var(--stamp) / .65);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  ::selection { background: hsl(var(--stamp) / .22); }
+  /* 手写体工具类（儿童原话引用专用）*/
+  .font-hand { font-family: var(--font-hand); }
+}
+
+@layer utilities {
+  .bg-background { background-color: hsl(var(--background)); }
+  .text-foreground { color: hsl(var(--foreground)); }
+  .bg-card { background-color: hsl(var(--card)); }
+  .text-card-foreground { color: hsl(var(--card-foreground)); }
+  .bg-popover { background-color: hsl(var(--popover)); }
+  .text-popover-foreground { color: hsl(var(--popover-foreground)); }
+  .bg-primary { background-color: hsl(var(--primary)); }
+  .text-primary { color: hsl(var(--primary)); }
+  .text-primary-foreground { color: hsl(var(--primary-foreground)); }
+  .bg-secondary { background-color: hsl(var(--secondary)); }
+  .text-secondary-foreground { color: hsl(var(--secondary-foreground)); }
+  .bg-muted { background-color: hsl(var(--muted)); }
+  .text-muted-foreground { color: hsl(var(--muted-foreground)); }
+  .bg-accent { background-color: hsl(var(--accent)); }
+  .text-accent-foreground { color: hsl(var(--accent-foreground)); }
+  .bg-destructive { background-color: hsl(var(--destructive)); }
+  .text-destructive { color: hsl(var(--destructive)); }
+  .border-border { border-color: hsl(var(--border)); }
+  .border-input { border-color: hsl(var(--input)); }
+  .ring-ring { --tw-ring-color: hsl(var(--ring)); }
+  .outline-ring { outline-color: hsl(var(--ring)); }
+  /* 朱砂章 */
+  .stamp-seal {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 2.6rem; height: 2.6rem; border-radius: 9999px;
+    border: 3px solid hsl(var(--stamp) / .85);
+    color: hsl(var(--stamp-ink));
+    background: hsl(var(--stamp) / .08);
+    transform: rotate(-6deg);
+    box-shadow: inset 0 0 0 1.5px hsl(var(--background)), inset 0 0 0 3px hsl(var(--stamp) / .55);
+    opacity: .94;
+  }
+  /* 相纸白边照片卡 */
+  .photo-card {
+    background: white; padding: 0.5rem 0.5rem 2rem;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px hsl(var(--shadow-warm) / .25), 0 4px 14px hsl(var(--shadow-warm) / .18);
+  }
+  .dark .photo-card { background: hsl(var(--card)); }
+  /* 糖果标签贴 */
+  .sticker {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium;
+    box-shadow: 0 1px 2px hsl(var(--shadow-warm) / .2);
+  }
+}
+
+/* Recharts 深色适配 */
+.dark .recharts-cartesian-axis-tick text { fill: hsl(var(--muted-foreground)); }
+.dark .recharts-cartesian-grid line { stroke: hsl(var(--border)); }
+
+/* 盖章动效 */
+@keyframes stamp-down {
+  0% { transform: rotate(-8deg) scale(2.2); opacity: 0; filter: blur(2px); }
+  55% { transform: rotate(-8deg) scale(.94); opacity: 1; filter: blur(0); }
+  75% { transform: rotate(-8deg) scale(1.04); }
+  100% { transform: rotate(-8deg) scale(1); opacity: .92; }
+}
+.animate-stamp { animation: stamp-down .5s cubic-bezier(.22,1,.36,1) both; }
+
+/* 页面进入：纸页翻落 */
+@keyframes page-settle {
+  from { transform: translateY(10px) rotate(.15deg); opacity: 0; }
+  to { transform: translateY(0) rotate(0); opacity: 1; }
+}
+.animate-page { animation: page-settle .38s cubic-bezier(.22,1,.36,1) both; }
+
+/* 配对点选：印章按压弹跳 */
+@keyframes pair-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(.9); }
+  100% { transform: scale(1); }
+}
+/* 配对成功：两枚名字滑拢牵手（左右交错）*/
+@keyframes pair-join-l { from { transform: translateX(-8px); opacity: .3; } to { transform: translateX(0); opacity: 1; } }
+@keyframes pair-join-r { from { transform: translateX(8px); opacity: .3; } to { transform: translateX(0); opacity: 1; } }
+
+/* ===== 日志本封面 & 翻页 ===== */
+.book-cover {
+  /* 墨绿布纹封面：斜纹布 + 细噪点 */
+  background-color: hsl(160 30% 30%);
+  background-image:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='c'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23c)' opacity='0.06'/%3E%3C/svg%3E"),
+    repeating-linear-gradient(45deg, transparent 0 6px, hsl(160 32% 26% / .8) 6px 12px);
+}
+@keyframes book-turn {
+  0% { transform: perspective(1200px) rotateY(0); }
+  100% { transform: perspective(1200px) rotateY(-88deg); opacity: .9; }
+}
+.book-page-turn {
+  transform-origin: left center;
+  animation: book-turn .62s cubic-bezier(.55, .06, .68, .19) both;
+  border-left: 8px solid hsl(160 28% 24%);
+}
+
+/* ===== WkBar 日期翻页 ===== */
+@keyframes date-flip {
+  0% { transform: rotateX(70deg) translateY(-4px); opacity: 0; }
+  60% { transform: rotateX(-12deg); opacity: 1; }
+  100% { transform: rotateX(0); opacity: 1; }
+}
+.date-flip { animation: date-flip .34s cubic-bezier(.22,1,.36,1); transform-origin: top center; backface-visibility: hidden; }
+
+/* ===== 笔触划线（标题下划的书写感）===== */
+@keyframes ink-draw {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+.ink-draw { animation: ink-draw .7s cubic-bezier(.65,0,.35,1) both; }
+
+/* ===== 数字滚动（KPI 已有 CountUp；补图表容器淡入）===== */
+.chart-in { animation: chart-in .5s ease-out both; }
+@keyframes chart-in {
+  from { opacity: 0; transform: translateY(8px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ===== 深浅色切换：整页柔和过渡 ===== */
+html.theme-switching, html.theme-switching * {
+  transition: background-color .35s ease, color .35s ease, border-color .35s ease !important;
+}
