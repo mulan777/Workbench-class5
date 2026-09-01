@@ -25,29 +25,38 @@ type Rec = {
 export default function Checkin() {
   const ws = useWorkspace()
   const [records, setRecords] = useState<Rec[]>([])
-  const [stats, setStats] = useState<{ topPairs: any[]; daysRecorded: number }>({ topPairs: [], daysRecorded: 0 })
+  const [stats, setStats] = useState<{ topPairs: any[]; daily:any[]; daysRecorded:number; start:string; end:string }>({ topPairs: [], daily: [], daysRecorded: 0, start:'', end:'' })
+  const [range, setRange] = useState(1)
   const [modal, setModal] = useState(false)
   const [photoUrl, setPhotoUrl] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analysis, setAnalysis] = useState('')
+  const analysisRef = useRef<HTMLInputElement>(null)
+  const [uploadedImages, setUploadedImages] = useState<{path:string;date:string;created_at:string}[]>([])
+  const [selectedImages, setSelectedImages] = useState<string[]>([])
+  const [analyses, setAnalyses] = useState<any[]>([])
+  const [editingAnalysis, setEditingAnalysis] = useState<number | null>(null)
+  const [editingText, setEditingText] = useState('')
   const [picked, setPicked] = useState<number[]>([])
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [stamp, setStamp] = useState(false)
-  // 演示数据弹窗状态
-  const [demoModal, setDemoModal] = useState(false)
-  const [demoWeeks, setDemoWeeks] = useState(4)
-  const [seeding, setSeeding] = useState(false)
+  const [analyzeChooser, setAnalyzeChooser] = useState(false)
+  const [analyzeMode, setAnalyzeMode] = useState('new')
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
     const [list, st] = await Promise.all([
       api(`/api/checkins?date=${ws.date}`),
-      api('/api/checkins/stats')
+      api(`/api/checkins/stats?range=${range}&end=${ws.date}`)
     ])
     setRecords(list as Rec[])
     setStats(st as any)
+    const [imgs, hist] = await Promise.all([api('/api/checkin/uploaded-images'), api('/api/checkin/analyses')])
+    setUploadedImages(imgs as any); setAnalyses(hist as any)
   }
-  useEffect(() => { load().catch(e => toast.error(e.message)) }, [ws.date])
+  useEffect(() => { load().catch(e => toast.error(e.message)) }, [ws.date, range])
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -64,6 +73,38 @@ export default function Checkin() {
       .catch(err => toast.error(err.message))
       .finally(() => { setUploading(false); e.target.value = '' })
   }
+
+  async function analyzeFile(file: File) {
+    setAnalyzing(true); setAnalysis('')
+    try {
+      const fd = new FormData(); fd.append('file', file)
+      const res = await fetch('/api/checkin/analyze', { method: 'POST', body: fd, credentials: 'same-origin' })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `分析失败(${res.status})`) }
+      if (!res.body) throw new Error('分析接口没有返回内容')
+      const reader = res.body.getReader(); const decoder = new TextDecoder(); let buf = ''
+      while (true) {
+        const { done, value } = await reader.read(); if (done) break
+        buf += decoder.decode(value, { stream: true }); const parts = buf.split('\n'); buf = parts.pop() || ''
+        for (const line of parts) { if (!line.startsWith('data:')) continue; const raw=line.slice(5).trim(); if (!raw || raw==='[DONE]') continue; try { const j=JSON.parse(raw); const d=j.choices?.[0]?.delta?.content || j.choices?.[0]?.message?.content || ''; if(d) setAnalysis(x=>x+d) } catch {} }
+      }
+    } catch (e: any) { toast.error(e.message) } finally { setAnalyzing(false) }
+  }
+  function onAnalyzePick(e: React.ChangeEvent<HTMLInputElement>) { const f=e.target.files?.[0]; if(f) analyzeFile(f); e.target.value='' }
+  function toggleImage(path: string) { setSelectedImages(x => x.includes(path) ? x.filter(p => p !== path) : [...x, path]) }
+  async function analyzeSelected() {
+    if (!selectedImages.length) return
+    setAnalyzing(true); setAnalysis('')
+    try {
+      const res=await fetch('/api/checkin/analyze-existing',{method:'POST',credentials:'same-origin',headers:{'content-type':'application/json'},body:JSON.stringify({paths:selectedImages})})
+      if(!res.ok){const d=await res.json().catch(() => ({}));throw new Error(d.error||'分析失败')}
+      const reader=res.body?.getReader(); if(!reader) throw new Error('分析接口没有返回内容'); const dec=new TextDecoder(); let buf=''
+      while(true){const {done,value}=await reader.read();if(done)break;buf+=dec.decode(value,{stream:true});const lines=buf.split('\n');buf=lines.pop()||'';for(const line of lines){if(!line.startsWith('data:'))continue;const raw=line.slice(5).trim();if(!raw||raw==='[DONE]')continue;try{const j=JSON.parse(raw);const d=j.choices?.[0]?.delta?.content||j.choices?.[0]?.message?.content||'';if(d)setAnalysis(x=>x+d)}catch{}}}
+      setSelectedImages([]); await load()
+    }catch(e:any){toast.error(e.message)}finally{setAnalyzing(false)}
+  }
+  async function saveAnalysis(id:number){ await api('/api/checkin/analyses/'+id,{method:'PUT',body:JSON.stringify({content:editingText})}); setEditingAnalysis(null); await load(); toast('分析记录已保存') }
+  async function deleteAnalysis(id:number){ const ok=await confirmDialog({title:'删除这条分析记录？',description:'删除后无法恢复。',danger:true}); if(!ok)return; await api('/api/checkin/analyses/'+id,{method:'DELETE'}); await load(); toast('分析记录已删除') }
+
 
   function toggle(id: number) {
     setPicked(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]))
@@ -103,39 +144,6 @@ export default function Checkin() {
     load()
   }
 
-  async function seedDemo() {
-    setSeeding(true)
-    try {
-      await api('/api/demo/checkin-seed', {
-        method: 'POST',
-        body: JSON.stringify({ weeks: demoWeeks })
-      })
-      toast.success(`已生成最近 ${demoWeeks} 周的模拟签到与区域倾听数据`)
-      setDemoModal(false)
-      await load()
-    } catch (e: any) {
-      toast.error(e.message)
-    } finally {
-      setSeeding(false)
-    }
-  }
-
-  async function clearDemo() {
-    const ok = await confirmDialog({
-      title: '清除全部演示模拟数据？',
-      description: '仅删除系统生成的演示数据（签到备注为「演示」、区域倾听标记记录），真实登记不受影响。',
-      danger: true
-    })
-    if (!ok) return
-    try {
-      await api('/api/demo/clear', { method: 'POST' })
-      toast('演示数据已清除')
-      await load()
-    } catch (e: any) {
-      toast.error(e.message)
-    }
-  }
-
   const chartData = stats.topPairs.slice(0, 8).map((p: any) => ({ name: `${p.an} · ${p.bn}`, 结伴次数: p.cnt }))
   const solidPairs = stats.topPairs.filter((p: any) => p.cnt >= 2)
 
@@ -147,9 +155,8 @@ export default function Checkin() {
         action={
           <>
             <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickFile} />
-            <Button variant="outline" onClick={() => setDemoModal(true)}>
-              <Wand2 /> 模拟数据
-            </Button>
+            <input ref={analysisRef} type="file" accept="image/*" className="hidden" onChange={onAnalyzePick} />
+            <Button variant="outline" onClick={() => setAnalyzeChooser(true)} disabled={analyzing}>{analyzing ? <Loader2 className="animate-spin" /> : <Wand2 />} {analyzing ? '分析中…' : '分析签到图片'}</Button>
             <Button onClick={() => fileRef.current?.click()} disabled={uploading}>
               {uploading ? <Loader2 className="animate-spin" /> : <Camera />}
               {uploading ? '上传中…' : '上传照片并登记'}
@@ -160,6 +167,34 @@ export default function Checkin() {
 
       <WkBar />
 
+      {analyses.length > 0 && (
+        <Card className="mb-5">
+          <CardHeader><CardTitle className="text-[15px]">历史分析记录</CardTitle><CardDescription>按天归档，可回看、编辑或删除</CardDescription></CardHeader>
+          <CardContent className="space-y-4">
+            {analyses.map(a => (
+              <div key={a.id} className="rounded-xl border border-border p-4">
+                <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
+                  <span>{String(a.created_at).slice(0,10)} {String(a.created_at).slice(11,16)} · {a.image_paths.length} 张图片</span>
+                  {editingAnalysis === a.id ? (
+                    <div className="flex gap-2"><Button size="sm" onClick={() => saveAnalysis(a.id)}>保存</Button><Button size="sm" variant="outline" onClick={() => setEditingAnalysis(null)}>取消</Button></div>
+                  ) : (
+                    <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => { setEditingAnalysis(a.id); setEditingText(a.content) }}>编辑</Button><Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteAnalysis(a.id)}>删除</Button></div>
+                  )}
+                </div>
+                {editingAnalysis === a.id ? <textarea value={editingText} onChange={e => setEditingText(e.target.value)} className="min-h-36 w-full rounded-lg border bg-background p-3 text-sm leading-7" /> : <pre className="whitespace-pre-wrap font-sans text-sm leading-7">{a.content}</pre>}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {analysis && (
+        <Card className="mb-5 border-primary/20 bg-primary/5">
+          <CardHeader className="flex-row items-center justify-between space-y-0"><div><CardTitle className="text-[15px]">签到图片分析</CardTitle><CardDescription>AI 已流式返回，请结合原图人工核对</CardDescription></div><Button variant="ghost" size="sm" onClick={() => setAnalysis('')}>清除</Button></CardHeader>
+          <CardContent><pre className="whitespace-pre-wrap font-sans text-sm leading-7 text-foreground">{analysis}</pre></CardContent>
+        </Card>
+      )}
+
       {/* 当日记录 */}
       <Card className="mb-5">
         <CardHeader className="flex-row items-start justify-between space-y-0">
@@ -167,14 +202,7 @@ export default function Checkin() {
             <CardTitle className="text-[15px]">当日签到（{fmtDate(ws.date)}）</CardTitle>
             <CardDescription>共 {records.length} 条记录</CardDescription>
           </div>
-          <Button
-            variant="ghost" size="sm"
-            className="text-muted-foreground hover:text-destructive"
-            onClick={clearDemo}
-            disabled={!stats.topPairs.length}
-          >
-            <Eraser /> 清除演示数据
-          </Button>
+
         </CardHeader>
         <CardContent>
           {!records.length ? (
@@ -191,7 +219,6 @@ export default function Checkin() {
                     <div className="flex items-center gap-2 text-sm font-medium">
                       {r.note || '结伴签到'}
                       <Badge variant="secondary">{r.pairs.length} 对</Badge>
-                      {r.note === '演示' && <Badge variant="outline" className="text-muted-foreground">模拟</Badge>}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{fmtDate(r.date)}</span>
@@ -221,15 +248,15 @@ export default function Checkin() {
       <Card className="mb-5">
         <CardHeader className="flex-row items-start justify-between space-y-0">
           <div className="space-y-1">
-            <CardTitle className="text-[15px]">伙伴交往统计</CardTitle>
+            <CardTitle className="text-[15px]">伙伴交往统计</CardTitle><div className="mt-2 flex gap-1">{[[1,'当天'],[7,'7天'],[30,'30天']].map(([v,l])=><Button key={v} size="sm" variant={range===v?'default':'outline'} onClick={()=>setRange(v as number)}>{l}</Button>)}</div>
             <CardDescription className="flex items-center gap-1.5">
-              <CalendarClock className="size-3.5" /> 已累计 {stats.daysRecorded} 天数据 · 点击图例可隐藏系列
+              <CalendarClock className="size-3.5" /> {stats.start} 至 {stats.end} · 共 {stats.daysRecorded} 天有签到
             </CardDescription>
           </div>
         </CardHeader>
         <CardContent>
           {chartData.length === 0 ? (
-            <EmptyState icon={<Handshake />} title="暂无统计" hint="需要多日签到数据积累后自动生成，也可用右上角「模拟数据」先看效果" />
+            <EmptyState icon={<Handshake />} title="暂无统计" hint="需要多日签到数据积累后自动生成，" />
           ) : (
             <TrendChart
               data={chartData}
@@ -280,34 +307,9 @@ export default function Checkin() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={analyzeChooser} onOpenChange={setAnalyzeChooser}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>分析签到图片</DialogTitle></DialogHeader><div className="grid gap-3 sm:grid-cols-2"><button type="button" onClick={() => setAnalyzeMode('new')} className="rounded-xl border p-4 text-left">上传新图片</button><button type="button" onClick={() => setAnalyzeMode('existing')} className="rounded-xl border p-4 text-left">分析已上传的图片（可多选）</button></div>{analyzeMode==='existing' && <div className="max-h-80 overflow-y-auto rounded-xl border p-3">{!uploadedImages.length ? <p>暂时没有已上传的签到图片</p> : <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">{uploadedImages.map(im => <label key={im.path} className="cursor-pointer rounded-xl border p-2"><div className="relative"><img src={im.path} className="h-24 w-full rounded-lg object-cover" /><input type="checkbox" checked={selectedImages.includes(im.path)} onChange={() => toggleImage(im.path)} className="absolute right-2 top-2 size-4" /></div><div className="mt-1 text-xs">{fmtDate(im.date)}</div></label>)}</div>}</div>}<DialogFooter>{analyzeMode==='new' ? <Button onClick={() => { setAnalyzeChooser(false); analysisRef.current?.click() }}>选择图片</Button> : <Button onClick={() => { setAnalyzeChooser(false); analyzeSelected() }} disabled={analyzing || !selectedImages.length}>分析已选 {selectedImages.length} 张</Button>}</DialogFooter></DialogContent></Dialog>
       {stamp && <StampDone text="已记录" />}
 
-      {/* 模拟数据弹窗 */}
-      <Dialog open={demoModal} onOpenChange={setDemoModal}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>生成模拟签到数据</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm leading-relaxed text-muted-foreground">
-            将按<strong className="text-foreground">最近 N 周</strong>生成每日结伴签到（每周约5天），并附带少量区域倾听记录。
-            所有数据带「演示」标记，不会和真实登记混淆，可随时一键清除。
-          </p>
-          <div>
-            <Label htmlFor="demo-weeks">周数</Label>
-            <Input
-              id="demo-weeks" type="number" min={1} max={20}
-              value={demoWeeks}
-              onChange={e => setDemoWeeks(Math.min(20, Math.max(1, Number(e.target.value) || 1)))}
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDemoModal(false)}>取消</Button>
-            <Button onClick={seedDemo} disabled={seeding}>
-              {seeding ? <Loader2 className="animate-spin" /> : <Wand2 />} 开始生成
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }

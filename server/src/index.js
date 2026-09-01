@@ -14,8 +14,9 @@ import authPlugin from './plugins/auth.js'
 import authRoutes from './routes/auth.js'
 import apiRoutes from './routes/api.js'
 import fp from 'fastify-plugin'
+import { registerAiRoutes } from './ai.js'
 
-const app = Fastify({ logger: false, bodyLimit: 2 * 1024 * 1024 })
+const app = Fastify({ logger: false, bodyLimit: 32 * 1024 * 1024 })
 
 await app.register(fastifyCookie)
 await app.register(fastifyJwt, { secret: JWT_SECRET, cookie: { cookieName: 'zt_token' } })
@@ -43,6 +44,7 @@ app.post('/api/upload', { preHandler: [app.auth] }, async (req, reply) => {
 
 await app.register(authRoutes)
 await app.register(apiRoutes)
+registerAiRoutes(app)
 
 // 本地联调：ZT_SERVE_WEB=1 时由 Node 直接托管前端产物（生产由Caddy托管）
 if (process.env.ZT_SERVE_WEB === '1') {

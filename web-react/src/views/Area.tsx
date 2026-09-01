@@ -97,6 +97,8 @@ export default function Area() {
   const ws = useWorkspace()
   const [areaMeta, setAreaMeta] = useState<AreaMeta[]>([])
   const [records, setRecords] = useState<Rec[]>([])
+  const [range, setRange] = useState(7)
+  const [period, setPeriod] = useState({start:'',end:''})
   const [loading, setLoading] = useState(false)
 
   // 选区明细折叠区
@@ -113,8 +115,9 @@ export default function Area() {
   async function load() {
     setLoading(true)
     try {
-      const d: any = await api(`/api/area-records?week=${ws.week}`)
+      const d: any = await api(`/api/area-records?range=${range}&end=${ws.date}`)
       setRecords(d.records || [])
+      setPeriod({start:d.start || '', end:d.end || ''})
       if (Array.isArray(d.areaMeta) && d.areaMeta.length) setAreaMeta(d.areaMeta)
     } catch (e: any) {
       toast.error(e.message)
@@ -125,7 +128,7 @@ export default function Area() {
 
   useEffect(() => {
     load()
-  }, [ws.week])
+  }, [ws.week, ws.date, range])
 
   /* ---------- 第一部分：各区域选区头像与统计 ---------- */
   const areaStats = useMemo(() => {
@@ -276,6 +279,7 @@ export default function Area() {
         }
       />
       <WkBar />
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-2"><span className="px-2 text-xs text-muted-foreground">统计范围：{period.start} 至 {period.end}</span><div className="flex gap-1">{[[1,'当天'],[7,'7天'],[30,'30天']].map(([v,l])=><Button key={v} size="sm" variant={range===v?'default':'outline'} onClick={()=>setRange(v as number)}>{l}</Button>)}</div></div>
 
       {!areaMeta.length ? (
         <Card><CardContent className="p-6">
@@ -333,7 +337,7 @@ export default function Area() {
                       <div className="flex-1 rounded-xl border border-border/50 bg-accent/20 p-3">
                         {!kids.length ? (
                           <div className="flex h-24 items-center justify-center text-xs text-muted-foreground/70">
-                            本周暂无儿童选入
+                            当前范围暂无儿童选入
                           </div>
                         ) : (
                           <div className="flex flex-wrap gap-2.5">
@@ -354,7 +358,7 @@ export default function Area() {
               <Card className="border-dashed bg-muted/30">
                 <CardContent className="p-4 flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2 text-xs font-semibold text-muted-foreground">
-                    <UserX className="size-4 text-amber-500" /> 本周尚未选区儿童 ({unselectedStudents.length} 人)：
+                    <UserX className="size-4 text-amber-500" /> 当前范围尚未选区儿童 ({unselectedStudents.length} 人)：
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {unselectedStudents.map(s => (
@@ -439,7 +443,7 @@ export default function Area() {
           >
             <span className="flex items-center gap-2 text-sm font-medium">
               <ListChecks className="size-4 text-muted-foreground" />
-              选区流水记录（本周 {records.length} 条）
+              选区流水记录（当前范围 {records.length} 条）
             </span>
             <span className="text-xs text-muted-foreground">{detailOpen ? '收起 ▲' : '展开 ▼'}</span>
           </button>

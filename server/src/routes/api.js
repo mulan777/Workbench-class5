@@ -226,14 +226,15 @@ export default async function miscRoutes(app) {
     return { ok: true }
   })
   // 统计：结伴频次 + 友谊固化
-  app.get('/api/checkins/stats', { preHandler: [app.auth] }, async () => {
-    const rows = app.db.prepare(`
-      SELECT pa.name an, pb.name bn, pa.id aid, pb.id bid, COUNT(*) cnt,
-             MIN(cp.rowid) since_id
-      FROM checkin_pairs cp JOIN students pa ON pa.id=cp.student_a JOIN students pb ON pb.id=cp.student_b
-      GROUP BY (CASE WHEN pa.id<pb.id THEN pa.id ELSE pb.id END), (CASE WHEN pa.id>pb.id THEN pa.id ELSE pb.id END) ORDER BY cnt DESC`).all()
-    const weeksWith = app.db.prepare(`SELECT COUNT(DISTINCT c.date) d FROM checkins c`).get().d
-    return { topPairs: rows.slice(0, 20), daysRecorded: weeksWith }
+  app.get('/api/checkins/stats', { preHandler: [app.auth] }, async (req) => {
+    const range = Math.min(365, Math.max(1, Number(req.query?.range) || 1))
+    const end = String(req.query?.end || new Date().toISOString().slice(0, 10))
+    const start = new Date(end + 'T00:00:00'); start.setDate(start.getDate() - range + 1)
+    const startStr = start.toISOString().slice(0, 10)
+    const rows = app.db.prepare(`SELECT pa.name an,pb.name bn,pa.id aid,pb.id bid,COUNT(*) cnt,MIN(cp.rowid) since_id FROM checkin_pairs cp JOIN checkins c ON c.id=cp.checkin_id JOIN students pa ON pa.id=cp.student_a JOIN students pb ON pb.id=cp.student_b WHERE c.date BETWEEN ? AND ? GROUP BY (CASE WHEN pa.id<pb.id THEN pa.id ELSE pb.id END),(CASE WHEN pa.id>pb.id THEN pa.id ELSE pb.id END) ORDER BY cnt DESC`).all(startStr,end)
+    const daily = app.db.prepare(`SELECT c.date,COUNT(DISTINCT c.id) checkins,COUNT(cp.id) pairs FROM checkins c LEFT JOIN checkin_pairs cp ON cp.checkin_id=c.id WHERE c.date BETWEEN ? AND ? GROUP BY c.date ORDER BY c.date`).all(startStr,end)
+    const daysRecorded = app.db.prepare('SELECT COUNT(DISTINCT date) d FROM checkins WHERE date BETWEEN ? AND ?').get(startStr,end).d
+    return { range,start:startStr,end,topPairs:rows.slice(0,20),daily,daysRecorded }
   })
 
 
@@ -301,14 +302,14 @@ export default async function miscRoutes(app) {
 
   // 区域选区
   app.get('/api/area-records', { preHandler: [app.auth] }, async (req) => {
-    const week = Number(req.query.week)
-    if (!week) return reply.code(400).send({ error: '缺少week' })
     seedAreas(app.db)
+    const range = Math.min(365, Math.max(1, Number(req.query?.range) || 7))
+    const end = String(req.query?.end || new Date().toISOString().slice(0,10))
+    const d = new Date(end+'T00:00:00'); d.setDate(d.getDate()-range+1)
+    const start = d.toISOString().slice(0,10)
     const areas = app.db.prepare('SELECT name,emoji FROM area_settings ORDER BY sort,id').all()
-    const rows = app.db.prepare(`
-      SELECT r.*, s.name student_name, s.avatar student_avatar FROM area_records r LEFT JOIN students s ON s.id=r.student_id
-      WHERE week=? ORDER BY created_at DESC`).all(week)
-    return { areas: areas.map(a => a.name), areaMeta: areas, types: AREA_TYPES, records: rows }
+    const rows = app.db.prepare(`SELECT r.*,s.name student_name,s.avatar student_avatar FROM area_records r LEFT JOIN students s ON s.id=r.student_id WHERE COALESCE(r.date,date(r.created_at)) BETWEEN ? AND ? ORDER BY created_at DESC`).all(start,end)
+    return { range,start,end,areas: areas.map(a=>a.name),areaMeta:areas,types:AREA_TYPES,records:rows }
   })
   app.post('/api/area-records', { preHandler: [app.auth] }, async (req, reply) => {
     const b = req.body || {}
@@ -473,94 +474,5 @@ export default async function miscRoutes(app) {
   app.delete('/api/trackings/:id', { preHandler: [app.auth] }, async (req) => {
     app.db.prepare('DELETE FROM trackings WHERE id=?').run(Number(req.params.id))
     return { ok: true }
-  })
-
-  // ===== 演示模拟数据（一键生成 / 一键清除，仅操作 note 带标记的数据）=====
-  const DEMO_TAG = '演示'
-  const DEMO_QA = [
-    ['我和乐乐在美工区做了贺卡', '和乐乐一起', '胶水总是粘不牢', '我们换了双面胶就粘住了'],
-    ['我搭了一个很高的停车场', '和朵朵、小宇一起', '积木塔倒了两次', '下面用大块的积木就不倒了'],
-    ['我在语言区看了恐龙书', '自己看的，后来果果也来了', '有一页看不懂', '问了老师，是恐龙在睡觉'],
-    ['我们在娃娃家做饭', '和甜甜、安安一起', '锅不够用了', '我去建构区借了一个'],
-    ['下棋输了有点不开心', '和童童一起', '总是他赢', '老师说下次轮流先走']
-  ]
-  const DEMO_CONTENT = [
-    '能用完整句子讲述游戏过程，遇到问题愿意自己先尝试解决。',
-    '与同伴分工明确，能主动分享材料，语言表达比上月更流畅。',
-    '专注度高，能连续参与区域活动25分钟以上，遇到困难会寻求帮助。',
-    '开始尝试用绘画符号记录自己的玩法，符号使用有创意。',
-    '在同伴追问下能补充细节，回顾四问回答完整度提升。'
-  ]
-  function mulberry32(seed) {
-    let a = seed
-    return () => {
-      a |= 0; a = (a + 0x6D2B79F5) | 0
-      let t = Math.imul(a ^ (a >>> 15), 1 | a)
-      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
-      return ((t ^ (t >>> 14)) >>> 0) / 4294967296
-    }
-  }
-  app.post('/api/demo/checkin-seed', { preHandler: [app.auth] }, async (req, reply) => {
-    const weeks = Number(req.body?.weeks || 4)
-    if (!(weeks >= 1 && weeks <= 20)) return reply.code(400).send({ error: '周数须在1-20之间' })
-    const students = app.db.prepare('SELECT id FROM students WHERE active=1 ORDER BY sid').all()
-    if (students.length < 4) return reply.code(400).send({ error: '在册幼儿不足4名' })
-    seedAreas(app.db)
-    const areaRows = app.db.prepare('SELECT name FROM area_settings ORDER BY sort,id').all()
-    const areaNames = areaRows.map(a => a.name)
-    const types = ['讲述', '绘画', '符号', '关键词', '前书写']
-    // 固定随机种子：重复生成结果一致，便于验收
-    const rnd = mulberry32(20260826)
-    const today = new Date()
-    const tx = app.db.transaction(() => {
-      for (let w = 1; w <= weeks; w++) {
-        for (let dayIdx = 0; dayIdx < 5; dayIdx++) {
-          const base = new Date(today.getTime() - (weeks - w) * 7 * 86400000 + dayIdx * 86400000)
-          if (base.getTime() > today.getTime()) continue
-          const date = base.toISOString().slice(0, 10)
-          const exists = app.db.prepare("SELECT COUNT(*) n FROM checkins WHERE date=? AND note=?").get(date, DEMO_TAG).n
-          if (exists > 0) continue
-          // 洗牌取前8名幼儿两两配对（固定种子，前几名出现频率高→形成固化对）
-          const pool = [...students]
-          for (let i = pool.length - 1; i > 0; i--) {
-            const j = Math.floor(rnd() * (i + 1))
-            ;[pool[i], pool[j]] = [pool[j], pool[i]]
-          }
-          const picked = pool.slice(0, 8)
-          const info = app.db.prepare('INSERT INTO checkins(date,photo_path,note,created_by) VALUES (?,NULL,?,1)').run(date, DEMO_TAG)
-          const ins = app.db.prepare('INSERT INTO checkin_pairs(checkin_id,student_a,student_b) VALUES (?,?,?)')
-          for (let k = 0; k + 1 < picked.length; k += 2) ins.run(info.lastInsertRowid, picked[k].id, picked[k + 1].id)
-        }
-        // 每周区域倾听模拟记录（q2 写入标记便于清除）
-        const weekStart = new Date(today.getTime() - (weeks - w) * 7 * 86400000)
-        if (weekStart.getTime() <= today.getTime()) {
-          const nRec = 3 + Math.floor(rnd() * 3)
-          for (let r = 0; r < nRec; r++) {
-            const stu = students[Math.floor(rnd() * students.length)]
-            const areaName = areaNames[Math.floor(rnd() * areaNames.length)]
-            const qa = DEMO_QA[Math.floor(rnd() * DEMO_QA.length)]
-            const content = DEMO_CONTENT[Math.floor(rnd() * DEMO_CONTENT.length)]
-            const type = types[Math.floor(rnd() * types.length)]
-            app.db.prepare(`INSERT INTO area_records(week,area,student_id,partner_name,type,q1,q2,q3,q4,content,created_by)
-              VALUES (?,?,?,?,?,?,?,?,?,?,1)`)
-              .run(w, areaName, stu.id, null, type, qa[0], DEMO_TAG, qa[2], qa[3], content)
-          }
-        }
-      }
-      return { ok: true }
-    })
-    return tx()
-  })
-  app.post('/api/demo/clear', { preHandler: [app.auth] }, async () => {
-    const tx = app.db.transaction(() => {
-      const ids = app.db.prepare('SELECT id FROM checkins WHERE note=?').all(DEMO_TAG)
-      for (const c of ids) {
-        app.db.prepare('DELETE FROM checkin_pairs WHERE checkin_id=?').run(c.id)
-        app.db.prepare('DELETE FROM checkins WHERE id=?').run(c.id)
-      }
-      app.db.prepare("DELETE FROM area_records WHERE q1=? OR content=? OR q2=?").run(DEMO_TAG, DEMO_TAG, DEMO_TAG)
-      return { ok: true, removedCheckins: ids.length }
-    })
-    return tx()
   })
 }

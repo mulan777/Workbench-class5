@@ -24,6 +24,7 @@ function tint(c: Candy) {
 }
 
 export default function Home() {
+  const [range, setRange] = useState(7)
   const ws = useWorkspace()
   const [data, setData] = useState<any | null>(null)
 
@@ -33,11 +34,11 @@ export default function Home() {
       const [checkins, areaToday, areaRec, hot, t1, t2, stats] = await Promise.all([
         api(`/api/checkins?date=${ws.date}`),
         api(`/api/area-selection/today?date=${ws.date}`),
-        api(`/api/area-records?week=${ws.week}`),
+        api(`/api/area-records?range=${range}&end=${ws.date}`),
         api(`/api/troubles?week=${ws.week}`),
         api('/api/theme/theme1?week=' + ws.week),
         api('/api/theme/theme2?week=' + ws.week),
-        api('/api/checkins/stats')
+        api(`/api/checkins/stats?range=${range}&end=${ws.date}`)
       ])
       if (!alive) return
 
@@ -62,7 +63,7 @@ export default function Home() {
       })
     })()
     return () => { alive = false }
-  }, [ws.date, ws.week, ws.students])
+  }, [ws.date, ws.week, ws.students, range])
 
   const topPairsList = useMemo(() => {
     return (data?.topPairs || []).slice(0, 10)
@@ -144,6 +145,8 @@ export default function Home() {
           </div>
         }
       />
+
+      <div className="mb-4 flex justify-end gap-1">{[[1,'当天'],[7,'7天'],[30,'30天']].map(([v,l])=><Button key={v} size="sm" variant={range===v?'default':'outline'} onClick={()=>setRange(v as number)}>{l}</Button>)}</div>
 
       {!data ? (
         <div className="space-y-5">

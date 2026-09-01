@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS students (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   sid TEXT NOT NULL UNIQUE,          -- 学号（两位字符串）
   name TEXT NOT NULL,
+  avatar TEXT,                       -- 自定义头像照片 /uploads/xxx.webp
   active INTEGER NOT NULL DEFAULT 1,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -37,16 +38,18 @@ CREATE INDEX IF NOT EXISTS idx_pairs_students ON checkin_pairs(student_a, studen
 CREATE TABLE IF NOT EXISTS area_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   week INTEGER NOT NULL,             -- 第几周(1-20)
+  date TEXT,                         -- YYYY-MM-DD (选区日期)
   area TEXT NOT NULL,                -- 区域名
   student_id INTEGER REFERENCES students(id),
   partner_name TEXT,
-  type TEXT NOT NULL,                -- 讲述/绘画/符号/关键词/前书写/录音
+  type TEXT NOT NULL DEFAULT '自主选区', -- 自主选区/讲述/绘画/符号/关键词/前书写/录音
   q1 TEXT, q2 TEXT, q3 TEXT, q4 TEXT,
   content TEXT,
-  created_by INTEGER NOT NULL REFERENCES teachers(id),
+  created_by INTEGER NOT NULL DEFAULT 1 REFERENCES teachers(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_area_week ON area_records(week, area);
+CREATE INDEX IF NOT EXISTS idx_area_date ON area_records(date, area);
 
 CREATE TABLE IF NOT EXISTS council_records (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -108,10 +111,20 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT NOT NULL
 );
 
--- 区域倾听：可管理的区域名单（首次启动时从默认列表迁移）
+-- 区域选区：可管理的区域名单（首次启动时从默认列表迁移）
 CREATE TABLE IF NOT EXISTS area_settings (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   emoji TEXT NOT NULL DEFAULT '🧸',
   sort INTEGER NOT NULL DEFAULT 0
 );
+
+CREATE TABLE IF NOT EXISTS checkin_ai_analyses (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  image_paths TEXT NOT NULL,
+  content TEXT NOT NULL DEFAULT '',
+  created_by INTEGER NOT NULL REFERENCES teachers(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ai_analysis_created ON checkin_ai_analyses(created_at DESC);
