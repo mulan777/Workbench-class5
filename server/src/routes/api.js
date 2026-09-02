@@ -1,3 +1,6 @@
+function maskStudentName(name) { const v=String(name||''); return v ? v[0]+'*' : v }
+function maskStudentFields(row) { if (!row || typeof row !== 'object') return row; const out={...row}; for (const k of ['name','an','bn','student_name','studentName','friend_name','friendName']) if (out[k]) out[k]=maskStudentName(out[k]); return out }
+
 const AREA_NAMES = ['美发店', '美工区', '益智区', '语言区', '建构区', '生活区', '科学区']
 // 默认区域（含图标）：area_settings 表为空时作为种子数据写入
 const DEFAULT_AREAS = [
@@ -66,7 +69,7 @@ export default async function miscRoutes(app) {
 
   // 名册
   app.get('/api/students', { preHandler: [app.auth] }, async () => {
-    return app.db.prepare('SELECT id,sid,name,avatar,active FROM students ORDER BY sid').all()
+    return app.db.prepare('SELECT id,sid,name,avatar,active FROM students ORDER BY sid').all().map(maskStudentFields)
   })
   app.put('/api/students/:id', { preHandler: [app.auth] }, async (req, reply) => {
     const id = Number(req.params.id)
@@ -94,7 +97,7 @@ export default async function miscRoutes(app) {
       if (dup) return reply.code(400).send({ error: `学号${sid}已存在` })
     }
     const info = app.db.prepare('INSERT INTO students(sid,name,avatar) VALUES (?,?,?)').run(newSid, String(name).trim(), avatar || null)
-    return app.db.prepare('SELECT id,sid,name,avatar,active FROM students WHERE id=?').get(info.lastInsertRowid)
+    return maskStudentFields(app.db.prepare('SELECT id,sid,name,avatar,active FROM students WHERE id=?').get(info.lastInsertRowid))
   })
   app.delete('/api/students/:id', { preHandler: [app.auth] }, async (req, reply) => {
     const id = Number(req.params.id)
@@ -201,7 +204,7 @@ export default async function miscRoutes(app) {
       SELECT p.id, pa.id aid, pa.name an, pb.id bid, pb.name bn
       FROM checkin_pairs p JOIN students pa ON pa.id=p.student_a JOIN students pb ON pb.id=p.student_b
       WHERE p.checkin_id=?`)
-    return rows.map(c => ({ ...c, pairs: pairStmt.all(c.id) }))
+    return rows.map(c => ({ ...c, pairs: pairStmt.all(c.id).map(maskStudentFields) }))
   })
   app.post('/api/checkins', { preHandler: [app.auth] }, async (req, reply) => {
     const { date, photoPath, note, pairIds } = req.body || {}
@@ -234,7 +237,7 @@ export default async function miscRoutes(app) {
     const rows = app.db.prepare(`SELECT pa.name an,pb.name bn,pa.id aid,pb.id bid,COUNT(*) cnt,MIN(cp.rowid) since_id FROM checkin_pairs cp JOIN checkins c ON c.id=cp.checkin_id JOIN students pa ON pa.id=cp.student_a JOIN students pb ON pb.id=cp.student_b WHERE c.date BETWEEN ? AND ? GROUP BY (CASE WHEN pa.id<pb.id THEN pa.id ELSE pb.id END),(CASE WHEN pa.id>pb.id THEN pa.id ELSE pb.id END) ORDER BY cnt DESC`).all(startStr,end)
     const daily = app.db.prepare(`SELECT c.date,COUNT(DISTINCT c.id) checkins,COUNT(cp.id) pairs FROM checkins c LEFT JOIN checkin_pairs cp ON cp.checkin_id=c.id WHERE c.date BETWEEN ? AND ? GROUP BY c.date ORDER BY c.date`).all(startStr,end)
     const daysRecorded = app.db.prepare('SELECT COUNT(DISTINCT date) d FROM checkins WHERE date BETWEEN ? AND ?').get(startStr,end).d
-    return { range,start:startStr,end,topPairs:rows.slice(0,20),daily,daysRecorded }
+    return { range,start:startStr,end,topPairs:rows.slice(0,20).map(maskStudentFields),daily,daysRecorded }
   })
 
 
@@ -253,7 +256,7 @@ export default async function miscRoutes(app) {
       JOIN students s ON s.id=r.student_id
       WHERE r.date=? OR (r.date IS NULL AND date(r.created_at)=?)`).all(date, date)
 
-    return { date, week, areas, students, records }
+    return { date, week, areas, students:students.map(maskStudentFields), records:records.map(maskStudentFields) }
   })
 
   // 儿童自主选区（拖拽提交 / 调整区域 / 移除）
@@ -309,7 +312,7 @@ export default async function miscRoutes(app) {
     const start = d.toISOString().slice(0,10)
     const areas = app.db.prepare('SELECT name,emoji FROM area_settings ORDER BY sort,id').all()
     const rows = app.db.prepare(`SELECT r.*,s.name student_name,s.avatar student_avatar FROM area_records r LEFT JOIN students s ON s.id=r.student_id WHERE COALESCE(r.date,date(r.created_at)) BETWEEN ? AND ? ORDER BY created_at DESC`).all(start,end)
-    return { range,start,end,areas: areas.map(a=>a.name),areaMeta:areas,types:AREA_TYPES,records:rows }
+    return { range,start,end,areas: areas.map(a=>a.name),areaMeta:areas,types:AREA_TYPES,records:rows.map(maskStudentFields) }
   })
   app.post('/api/area-records', { preHandler: [app.auth] }, async (req, reply) => {
     const b = req.body || {}
@@ -379,7 +382,7 @@ export default async function miscRoutes(app) {
     const rows = app.db.prepare(`
       SELECT ti.*, s.name student_name, s.avatar student_avatar FROM theme_items ti LEFT JOIN students s ON s.id=ti.student_id
       WHERE wall=? AND (? IS NULL OR week=?) AND (? IS NULL OR ti.student_id=?) ORDER BY ti.created_at DESC`).all(wall, weekParam, weekParam, studentId, studentId)
-    return rows
+    return rows.map(maskStudentFields)
   })
   app.post('/api/theme/:wall', { preHandler: [app.auth] }, async (req, reply) => {
     const wall = req.params.wall
@@ -438,7 +441,7 @@ export default async function miscRoutes(app) {
       JOIN troubles t ON t.id=r.trouble_id WHERE t.week=? GROUP BY r.trouble_id, r.kind`).all(week)
     const tracking = app.db.prepare(`
       SELECT tr.* FROM trackings tr JOIN troubles t ON t.id=tr.trouble_id WHERE t.week=? ORDER BY tr.created_at DESC`).all(week)
-    return { tags: TROUBLE_TAGS, troubles, reactions, tracking }
+    return { tags: TROUBLE_TAGS, troubles:troubles.map(maskStudentFields), reactions, tracking }
   })
   app.post('/api/troubles', { preHandler: [app.auth] }, async (req, reply) => {
     const b = req.body || {}

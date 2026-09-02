@@ -39,6 +39,7 @@ export default function Checkin() {
   const [editingAnalysis, setEditingAnalysis] = useState<number | null>(null)
   const [editingText, setEditingText] = useState('')
   const [picked, setPicked] = useState<number[]>([])
+  const [studentRoster, setStudentRoster] = useState<any[]>([])
   const [note, setNote] = useState('')
   const [saving, setSaving] = useState(false)
   const [stamp, setStamp] = useState(false)
@@ -47,16 +48,41 @@ export default function Checkin() {
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
-    const [list, st] = await Promise.all([
+    const [list, st, roster] = await Promise.all([
       api(`/api/checkins?date=${ws.date}`),
-      api(`/api/checkins/stats?range=${range}&end=${ws.date}`)
+      api(`/api/checkins/stats?range=${range}&end=${ws.date}`),
+      api('/api/students')
     ])
     setRecords(list as Rec[])
     setStats(st as any)
+    setStudentRoster((roster as any[]).filter(s => s.active !== 0))
     const [imgs, hist] = await Promise.all([api('/api/checkin/uploaded-images'), api('/api/checkin/analyses')])
     setUploadedImages(imgs as any); setAnalyses(hist as any)
   }
   useEffect(() => { load().catch(e => toast.error(e.message)) }, [ws.date, range])
+
+  function applyRecognizedIds(text: string) {
+    const m = text.match(/CHECKIN_IDS:\s*(\{.*\})/)
+    if (!m) return
+    try {
+      const data = JSON.parse(m[1])
+      const ids = [...new Set([...(data.sids || []), ...(data.pairs || []).flat()])].map(String)
+      const localIds = ids.map(sid => studentRoster.find(s => String(s.sid).padStart(2, '0') === sid.padStart(2, '0'))?.id).filter(Boolean)
+      if (localIds.length) { setPicked(localIds as number[]); toast(`已按学号识别 ${localIds.length} 名幼儿，请核对后保存`) }
+    } catch {}
+  }
+
+  async function analyzeUploadedPath(path: string) {
+    setAnalyzing(true); setAnalysis('')
+    try {
+      const res = await fetch('/api/checkin/analyze-existing', { method:'POST', credentials:'same-origin', headers:{'content-type':'application/json'}, body:JSON.stringify({paths:[path]}) })
+      if (!res.ok) throw new Error('图片识别失败')
+      const reader = res.body?.getReader(); if (!reader) throw new Error('识别接口没有返回内容')
+      const dec = new TextDecoder(); let buf = '', full = ''
+      while (true) { const {done,value}=await reader.read(); if(done) break; buf += dec.decode(value,{stream:true}); const lines=buf.split('\n'); buf=lines.pop()||''; for(const line of lines) { if(!line.startsWith('data:')) continue; const raw=line.slice(5).trim(); if(!raw||raw==='[DONE]') continue; try { const j=JSON.parse(raw); const d=j.choices?.[0]?.delta?.content||''; if(d){full+=d;setAnalysis(x=>x+d)} } catch {} } }
+      applyRecognizedIds(full)
+    } catch (e:any) { toast.error(e.message) } finally { setAnalyzing(false) }
+  }
 
   function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -69,6 +95,7 @@ export default function Checkin() {
         setPhotoUrl(d.url)
         setPicked([])
         setModal(true)
+        analyzeUploadedPath(d.url).catch(() => {})
       })
       .catch(err => toast.error(err.message))
       .finally(() => { setUploading(false); e.target.value = '' })
