@@ -28,7 +28,7 @@ await app.register(fastifyMultipart)
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: '/uploads/' })
 
 // 照片上传（multipart）
-app.post('/api/upload', { preHandler: [app.auth] }, async (req, reply) => {
+app.post('/api/upload', async (req, reply) => {
   const f = await req.file()
   if (!f) return reply.code(400).send({ error: '未收到文件' })
   const buf = await f.toBuffer()

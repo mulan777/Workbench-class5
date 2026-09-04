@@ -36,7 +36,7 @@ export default function ChildPhotoUpload() {
 
   async function loadStudents() {
     try {
-      const res: any = await api('/api/students')
+      const res: any = await api('/api/area-selection/students')
       setStudents((res || []).filter((s: any) => s.active))
     } catch (e: any) {
       toast.error('加载名册失败')
@@ -236,7 +236,7 @@ export default function ChildPhotoUpload() {
             >
               <div className="flex items-center gap-2.5">
                 <div className="size-10 rounded-xl overflow-hidden border border-[#be123c] flex items-center justify-center font-bold font-serif text-base" style={getCandyStyle(selectedKid.id, true)}>
-                  {selectedKid.avatar ? <img src={selectedKid.avatar} alt="" className="w-full h-full object-cover" /> : selectedKid.name.slice(-1)}
+                  {selectedKid.sid.replace(/^0+/, '') || selectedKid.sid || '?'}
                 </div>
                 <span className="font-bold text-sm text-[#be123c]">{selectedKid.name}</span>
               </div>
@@ -259,16 +259,7 @@ export default function ChildPhotoUpload() {
                   }`}
                 >
                   <div className="relative size-12 sm:size-13 rounded-xl overflow-hidden border border-[#d8cdb5] shadow-2xs bg-[#faf6ee] flex items-center justify-center">
-                    {kid.avatar ? (
-                      <img src={kid.avatar} alt={kid.name} className="w-full h-full object-cover" />
-                    ) : (
-                      <div
-                        className="w-full h-full flex items-center justify-center text-lg font-bold font-serif"
-                        style={getCandyStyle(kid.id)}
-                      >
-                        {kid.name.slice(-1)}
-                      </div>
-                    )}
+                    <div className="w-full h-full flex items-center justify-center text-lg font-bold font-serif" style={getCandyStyle(kid.id)}>{kid.sid.replace(/^0+/, '') || kid.sid || '?'}</div>
                   </div>
                   <span className={`text-xs font-bold truncate max-w-[48px] text-center ${isSelected ? 'text-[#be123c]' : 'text-[#3c2f21]'}`}>
                     {kid.name}

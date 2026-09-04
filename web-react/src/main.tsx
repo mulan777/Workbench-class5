@@ -51,9 +51,7 @@ function App() {
             <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/select" element={<ChildSelect />} />
-              <Route path="/kiosk" element={<ChildSelect />} />
               <Route path="/photo" element={<ChildPhotoUpload />} />
-              <Route path="/camera" element={<ChildPhotoUpload />} />
               <Route path="*" element={<Guard />} />
             </Routes>
             <GlobalHosts />

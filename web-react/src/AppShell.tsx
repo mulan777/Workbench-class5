@@ -3,8 +3,8 @@ import { NavLink, useLocation } from 'react-router-dom'
 import { useAuth } from '@/stores/auth'
 import { useWorkspace } from '@/stores/workspace'
 import {
-  LayoutGrid, ClipboardCheck, Users, HeartHandshake,
-  Flame, LogOut, Menu, X, Moon, Sun, UserCog, ArrowRight
+  LayoutGrid, ClipboardCheck, Users,
+  LogOut, Menu, X, Moon, Sun, UserCog, ArrowRight
 } from 'lucide-react'
 import { useTheme } from '@/lib/theme'
 import { Button } from '@/components/ui/button'
@@ -14,10 +14,8 @@ import { cn } from '@/lib/utils'
 const nav = [
   { to: '/', label: '总览', icon: LayoutGrid },
   { to: '/checkin', label: '签到台', icon: ClipboardCheck },
-  { to: '/area', label: '区域选区', icon: Users },
-  { to: '/theme1', label: '想念·重逢（第一、二周）', icon: HeartHandshake },
+  { to: '/area', label: '区域记录', icon: Users },
   { to: '/theme2', label: '好朋友新故事', icon: Users },
-  { to: '/hot', label: '热点问题墙', icon: Flame },
   { to: '/users', label: '用户管理', icon: UserCog }
 ]
 
@@ -46,6 +44,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-screen overflow-hidden">
       {/* 桌面侧栏：日志本封脊，纯粹克制 */}
       <aside
+        data-nav-version="20260903-clean-hot-nav"
         className="hidden w-64 shrink-0 flex-col border-r border-border bg-card px-3 py-4 md:flex"
         style={{
           boxShadow:

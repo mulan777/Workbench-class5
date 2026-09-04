@@ -19,7 +19,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
   Trash2, Settings2, Pencil, Loader2, Users, HeartHandshake, ListChecks,
-  ExternalLink, Sparkles, UserCheck, UserX, RefreshCw
+  UserCheck, UserX, RefreshCw, ExternalLink, Sparkles, Camera, Handshake, CheckCircle2, X
 } from 'lucide-react'
 
 type AreaMeta = { id: number; name: string; emoji: string; sort: number }
@@ -101,7 +101,7 @@ export default function Area() {
   const [period, setPeriod] = useState({start:'',end:''})
   const [loading, setLoading] = useState(false)
 
-  // 选区明细折叠区
+  // 区域记录明细折叠区
   const [detailOpen, setDetailOpen] = useState(false)
 
   // 区域管理弹窗状态
@@ -111,6 +111,7 @@ export default function Area() {
   const [newEmoji, setNewEmoji] = useState('🧸')
   const [editRow, setEditRow] = useState<{ id: number; name: string; emoji: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [inviteStats, setInviteStats] = useState<any>({ success: [], failed: [], invitations: [] })
 
   async function load() {
     setLoading(true)
@@ -119,6 +120,8 @@ export default function Area() {
       setRecords(d.records || [])
       setPeriod({start:d.start || '', end:d.end || ''})
       if (Array.isArray(d.areaMeta) && d.areaMeta.length) setAreaMeta(d.areaMeta)
+      const inv: any = await api(`/api/area-invitations?range=${range}&end=${ws.date}`)
+      setInviteStats(inv)
     } catch (e: any) {
       toast.error(e.message)
     } finally {
@@ -130,7 +133,7 @@ export default function Area() {
     load()
   }, [ws.week, ws.date, range])
 
-  /* ---------- 第一部分：各区域选区头像与统计 ---------- */
+  /* ---------- 第一部分：各区域记录与统计 ---------- */
   const areaStats = useMemo(() => {
     // area -> (studentKey -> {name, avatar, cnt})
     const map = new Map<string, Map<string, { name: string; avatar: string | null; cnt: number }>>()
@@ -179,7 +182,7 @@ export default function Area() {
     return { topPairs, degrees }
   }, [records])
 
-  // 本周还没在选区记录中出现的在册幼儿
+  // 本周还没在区域记录中出现的在册幼儿
   const unselectedStudents = useMemo(
     () => ws.students.filter(s => !coveredKids.has(s.name)),
     [ws.students, coveredKids]
@@ -234,7 +237,7 @@ export default function Area() {
   async function removeArea(a: AreaMeta) {
     const ok = await confirmDialog({
       title: `删除区域「${a.name}」？`,
-      description: '仅当该区域下没有选区记录时才能删除；有记录时请先处理记录。',
+      description: '仅当该区域下没有区域记录时才能删除；有记录时请先处理记录。',
       danger: true
     })
     if (!ok) return
@@ -247,7 +250,7 @@ export default function Area() {
   }
 
   async function delRecord(id: number) {
-    const ok = await confirmDialog({ title: '删除这条选区记录？', danger: true })
+    const ok = await confirmDialog({ title: '删除这条区域记录？', danger: true })
     if (!ok) return
     try {
       await api('/api/area-records/' + id, { method: 'DELETE' })
@@ -263,13 +266,18 @@ export default function Area() {
   return (
     <div>
       <PageHeader
-        title="区域选区"
-        desc="全班自主选区看板：儿童在独立选区大屏拖动头像自主完成选区，数据实时汇总呈现。"
+        title="区域记录"
+        desc="记录和查看全班幼儿在各活动区域的参与情况，数据按周汇总呈现。"
         action={
           <div className="flex flex-wrap items-center gap-2">
-            <Link to="/select" target="_blank">
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm gap-1.5 font-medium">
-                <Sparkles className="size-4" /> 打开儿童选区大屏 <ExternalLink className="size-3.5 opacity-70" />
+            <Link to="/select?v=20260904-2" target="_blank" rel="noreferrer">
+              <Button className="gap-1.5 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90">
+                <Sparkles className="size-4" /> 自主选区台 <ExternalLink className="size-3.5 opacity-70" />
+              </Button>
+            </Link>
+            <Link to="/photo?v=20260904-2" target="_blank" rel="noreferrer">
+              <Button variant="outline" className="gap-1.5">
+                <Camera className="size-4" /> 自主拍照台 <ExternalLink className="size-3.5 opacity-70" />
               </Button>
             </Link>
             <Button variant="outline" onClick={openMgr}>
@@ -289,10 +297,13 @@ export default function Area() {
         <Tabs defaultValue="overview" className="space-y-4">
           <TabsList>
             <TabsTrigger value="overview" className="gap-1.5">
-              <Users className="size-3.5" /> 区域选区分布
+              <Users className="size-3.5" /> 区域记录分布
             </TabsTrigger>
             <TabsTrigger value="partners" className="gap-1.5">
               <HeartHandshake className="size-3.5" /> 伙伴交往统计
+            </TabsTrigger>
+            <TabsTrigger value="invitations" className="gap-1.5">
+              <Handshake className="size-3.5" /> 邀请统计
             </TabsTrigger>
           </TabsList>
 
@@ -301,7 +312,7 @@ export default function Area() {
             {/* 顶部总体概况条 */}
             <div className="flex flex-wrap items-center gap-2">
               <StatPill label="活跃区域" value={`${activeAreas} / ${areaMeta.length} 区`} />
-              <StatPill label="自主选区人次" value={`${totalSelections} 人次`} />
+              <StatPill label="区域记录人次" value={`${totalSelections} 人次`} />
               <StatPill label="覆盖儿童" value={`${coveredKids.size} / ${ws.students.length} 人`} />
               <div className="ml-auto">
                 <Button variant="ghost" size="sm" onClick={load} disabled={loading} className="gap-1 text-xs">
@@ -431,10 +442,28 @@ export default function Area() {
               </Card>
             </div>
           </TabsContent>
+
+      <TabsContent value="invitations" className="space-y-4">
+        <div className="grid gap-4 md:grid-cols-2">
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><CheckCircle2 className="size-4 text-emerald-500" /> 配对成功排行榜</CardTitle><CardDescription>对方点击绿色勾并进入同一区域的邀请</CardDescription></CardHeader>
+            <CardContent>{!inviteStats.success?.length ? <div className="py-8 text-center text-xs text-muted-foreground">暂无成功配对</div> : <div className="space-y-2">{inviteStats.success.map((x: any, i: number) => <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 px-3 py-2 text-sm"><span>{x.inviter_name} ↔ {x.invitee_name}</span><Badge variant="outline">{x.count} 次</Badge></div>)}</div>}</CardContent>
+          </Card>
+          <Card>
+            <CardHeader><CardTitle className="text-base flex items-center gap-2"><X className="size-4 text-rose-500" /> 配对失败排行榜</CardTitle><CardDescription>对方点击红色叉拒绝的邀请</CardDescription></CardHeader>
+            <CardContent>{!inviteStats.failed?.length ? <div className="py-8 text-center text-xs text-muted-foreground">暂无失败配对</div> : <div className="space-y-2">{inviteStats.failed.map((x: any, i: number) => <div key={i} className="flex items-center justify-between rounded-lg border border-border/60 bg-accent/30 px-3 py-2 text-sm"><span>{x.inviter_name} ↔ {x.invitee_name}</span><Badge variant="destructive">{x.count} 次</Badge></div>)}</div>}</CardContent>
+          </Card>
+        </div>
+        <Card>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><ListChecks className="size-4 text-primary" /> 每日邀请记录</CardTitle><CardDescription>{inviteStats.start || period.start} 至 {inviteStats.end || period.end}，包含成功、拒绝和待处理</CardDescription></CardHeader>
+          <CardContent className="space-y-1.5">{!inviteStats.invitations?.length ? <div className="py-8 text-center text-xs text-muted-foreground">暂无邀请记录</div> : inviteStats.invitations.map((x: any) => <div key={x.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-accent/30 px-3 py-2 text-xs"><span className="shrink-0 text-muted-foreground">{x.date}</span><span className="font-medium">{x.inviter_name} → {x.invitee_name}</span><Badge variant="outline">{FALLBACK_EMOJI[x.area] || '🧸'} {x.area}</Badge><Badge variant={x.status === 'accepted' ? 'default' : x.status === 'rejected' ? 'destructive' : 'secondary'}>{x.status === 'accepted' ? '成功' : x.status === 'rejected' ? '拒绝' : x.status === 'pending' ? '待处理' : x.status === 'cancelled' ? '已取消' : x.status}</Badge><span className="ml-auto text-muted-foreground">{x.responded_at || x.created_at}</span></div>)}</CardContent>
+        </Card>
+      </TabsContent>
+
         </Tabs>
       )}
 
-      {/* 选区记录维护（默认收起） */}
+      {/* 区域记录维护（默认收起） */}
       {records.length > 0 && (
         <Card className="mt-5">
           <button

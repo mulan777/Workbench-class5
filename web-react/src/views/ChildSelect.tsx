@@ -44,7 +44,7 @@ function Avatar({ kid, selected = false, done = false, large = false }: {
         className={`${large ? 'size-24 sm:size-28' : 'size-16 sm:size-20 md:size-24'} relative flex items-center justify-center overflow-hidden rounded-3xl border-2 text-2xl font-bold shadow-sm transition-all`}
         style={candyStyle(kid.id, selected)}
       >
-        {kid.avatar ? <img src={kid.avatar} alt="" className="h-full w-full object-cover" /> : kid.name.slice(-1)}
+        {kid.sid.replace(/^0+/, '') || kid.sid || '?'}
         {done && <span className="absolute bottom-1 right-1 flex size-6 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="size-4" /></span>}
       </div>
       <span className="max-w-24 truncate text-center text-sm font-bold text-[#3c2f21] sm:text-base">{kid.name}</span>
@@ -60,8 +60,8 @@ export default function ChildSelect() {
   const [invitations, setInvitations] = useState<Invitation[]>([])
   const [phase, setPhase] = useState<Phase>('self')
   const [selfId, setSelfId] = useState<number | null>(null)
-  const [friendId, setFriendId] = useState<number | null>(null)
-  const [activeInvitation, setActiveInvitation] = useState<Invitation | null>(null)
+  const [friendIds, setFriendIds] = useState<number[]>([])
+  const [activeInvitations, setActiveInvitations] = useState<Invitation[]>([])
   const [doneArea, setDoneArea] = useState<Area | null>(null)
   const [busy, setBusy] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
@@ -87,44 +87,45 @@ export default function ChildSelect() {
 
   const selectedIds = useMemo(() => new Set(records.map(r => r.student_id)), [records])
   const self = students.find(s => s.id === selfId) || null
-  const friend = students.find(s => s.id === friendId) || null
+  const friends = students.filter(s => friendIds.includes(s.id))
 
   function reset() {
-    setPhase('self'); setSelfId(null); setFriendId(null)
-    setActiveInvitation(null); setDoneArea(null); setBusy(false)
+    setPhase('self'); setSelfId(null); setFriendIds([])
+    setActiveInvitations([]); setDoneArea(null); setBusy(false)
     loadData()
   }
 
   function chooseSelf(kid: Student) {
-    const pending = invitations.find(i => i.invitee_student_id === kid.id)
+    const pending = invitations.filter(i => i.invitee_student_id === kid.id)
     setSelfId(kid.id)
-    setFriendId(null)
-    if (pending) {
-      setActiveInvitation(pending)
+    setFriendIds([])
+    if (pending.length) {
+      setActiveInvitations(pending)
       setPhase('invitation')
     } else {
       setPhase('friend')
     }
   }
 
-  async function rejectInvitation() {
-    if (!activeInvitation || busy) return
+  async function rejectInvitation(id: number) {
+    if (busy) return
     setBusy(true)
     try {
-      await api(`/api/area-selection/invitations/${activeInvitation.id}/reject`, { method: 'POST' })
-      setInvitations(v => v.filter(i => i.id !== activeInvitation.id))
-      setActiveInvitation(null)
-      setPhase('friend')
+      await api(`/api/area-selection/invitations/${id}/reject`, { method: 'POST' })
+      const rest = activeInvitations.filter(i => i.id !== id)
+      setActiveInvitations(rest)
+      setInvitations(v => v.filter(i => i.id !== id))
+      if (!rest.length) setPhase('friend')
     } catch (e: any) { toast.error(e.message) } finally { setBusy(false) }
   }
 
-  async function acceptInvitation() {
-    if (!activeInvitation || busy) return
-    const area = areas.find(a => a.name === activeInvitation.area)
+  async function acceptInvitation(invitation: Invitation) {
+    if (busy) return
+    const area = areas.find(a => a.name === invitation.area)
     if (!area) return
     setBusy(true)
     try {
-      await api(`/api/area-selection/invitations/${activeInvitation.id}/accept`, { method: 'POST' })
+      await api(`/api/area-selection/invitations/${invitation.id}/accept`, { method: 'POST' })
       setDoneArea(area); setPhase('done'); playBeep()
       setTimeout(reset, 1800)
     } catch (e: any) { toast.error(e.message); setBusy(false) }
@@ -134,9 +135,9 @@ export default function ChildSelect() {
     if (!self || busy) return
     setBusy(true)
     try {
-      if (friend) {
+      if (friends.length) {
         await api('/api/area-selection/invitations', {
-          method: 'POST', body: JSON.stringify({ inviterStudentId: self.id, inviteeStudentId: friend.id, area: area.name, week: weekOf(date) })
+          method: 'POST', body: JSON.stringify({ inviterStudentId: self.id, inviteeStudentIds: friends.map(k => k.id), area: area.name, week: weekOf(date) })
         })
       } else {
         await api('/api/area-selection/select', {
@@ -186,7 +187,7 @@ export default function ChildSelect() {
       </header>
 
       {phase === 'self' && (
-        <main className="mx-auto grid max-w-5xl grid-cols-3 gap-x-3 gap-y-6 py-7 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+        <main className="mx-auto grid max-w-6xl grid-cols-5 gap-x-1 gap-y-3 py-7 sm:grid-cols-6 sm:gap-x-2 sm:gap-y-4 md:grid-cols-7 lg:grid-cols-8">
           {students.map(kid => (
             <button key={kid.id} onClick={() => chooseSelf(kid)} className="rounded-3xl p-2 transition hover:bg-white hover:shadow-md active:scale-95" aria-label={kid.name}>
               <Avatar kid={kid} done={selectedIds.has(kid.id)} />
@@ -195,48 +196,56 @@ export default function ChildSelect() {
         </main>
       )}
 
-      {phase === 'invitation' && activeInvitation && self && (
-        <main className="mx-auto flex min-h-[calc(100vh-110px)] max-w-3xl flex-col items-center justify-center gap-8 py-8">
-          <div className="flex items-center justify-center gap-6 sm:gap-12">
-            <Avatar kid={{ id: activeInvitation.inviter_student_id, sid: '', name: activeInvitation.inviter_name, avatar: activeInvitation.inviter_avatar }} large />
-            <Handshake className="size-12 text-[#ea580c]" strokeWidth={2.4} />
-            <div className="flex min-h-36 min-w-36 flex-col items-center justify-center rounded-3xl border-4 border-[#f0c88d] bg-[#fff7e8] p-5 shadow-lg">
-              <span className="text-6xl">{areas.find(a => a.name === activeInvitation.area)?.emoji || FALLBACK_EMOJI[activeInvitation.area] || '🧸'}</span>
-              <span className="mt-2 font-serif text-lg font-bold">{activeInvitation.area}</span>
-            </div>
-          </div>
-          <div className="flex gap-12">
-            <button disabled={busy} onClick={acceptInvitation} className={`${iconButton} border-emerald-200 bg-emerald-500`} aria-label="接受" title="接受"><Check className="size-9 sm:size-11" strokeWidth={3.5} /></button>
-            <button disabled={busy} onClick={rejectInvitation} className={`${iconButton} border-rose-200 bg-rose-500`} aria-label="拒绝" title="拒绝"><X className="size-9 sm:size-11" strokeWidth={3.5} /></button>
+      {phase === 'invitation' && activeInvitations.length > 0 && self && (
+        <main className="mx-auto flex min-h-[calc(100vh-110px)] max-w-6xl flex-col items-center justify-center gap-6 py-8">
+          <div className="grid w-full grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {activeInvitations.map(invitation => (
+              <div key={invitation.id} className="flex flex-col items-center gap-5 rounded-3xl border-4 border-[#f0c88d] bg-[#fff7e8] p-5 shadow-lg">
+                <div className="flex items-center justify-center gap-4">
+                  <Avatar kid={{ id: invitation.inviter_student_id, sid: '', name: invitation.inviter_name, avatar: invitation.inviter_avatar }} large />
+                  <Handshake className="size-9 text-[#ea580c]" />
+                  <div className="flex min-h-28 min-w-28 flex-col items-center justify-center rounded-3xl border-2 border-[#f0c88d] bg-white p-3">
+                    <span className="text-5xl">{areas.find(a => a.name === invitation.area)?.emoji || FALLBACK_EMOJI[invitation.area] || '🧸'}</span>
+                    <span className="mt-1 font-serif font-bold">{invitation.area}</span>
+                  </div>
+                </div>
+                <div className="flex gap-8">
+                  <button disabled={busy} onClick={() => acceptInvitation(invitation)} className={`${iconButton} border-emerald-200 bg-emerald-500`} aria-label={`接受${invitation.id}`} title="接受"><Check className="size-9" strokeWidth={3.5} /></button>
+                  <button disabled={busy} onClick={() => rejectInvitation(invitation.id)} className={`${iconButton} border-rose-200 bg-rose-500`} aria-label={`拒绝${invitation.id}`} title="拒绝"><X className="size-9" strokeWidth={3.5} /></button>
+                </div>
+              </div>
+            ))}
           </div>
         </main>
       )}
 
       {phase === 'friend' && self && (
         <main className="mx-auto flex max-w-5xl flex-col py-5">
+          <button onClick={() => { setFriendIds([]); setPhase('self') }} className="mb-3 flex size-12 items-center justify-center self-start rounded-full border bg-white" aria-label="返回头像" title="返回"><ArrowLeft className="size-6" /></button>
           <div className="mb-5 flex items-center justify-center gap-4">
             <Avatar kid={self} selected large />
-            {friend && <><Handshake className="size-8 text-[#ea580c]" /><Avatar kid={friend} selected large /></>}
+            {friends.map(kid => <span key={kid.id} className="flex items-center gap-4"><Handshake className="size-8 text-[#ea580c]" /><Avatar kid={kid} selected large /></span>)}
           </div>
-          <div className="grid grid-cols-3 gap-x-3 gap-y-5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+          <div className="grid grid-cols-5 gap-x-1 gap-y-3 sm:grid-cols-6 sm:gap-x-2 sm:gap-y-4 md:grid-cols-7 lg:grid-cols-8">
             {students.filter(k => k.id !== self.id && !selectedIds.has(k.id)).map(kid => (
-              <button key={kid.id} onClick={() => setFriendId(friendId === kid.id ? null : kid.id)} className={`rounded-3xl p-2 transition active:scale-95 ${friendId === kid.id ? 'bg-[#ffedd5] ring-4 ring-[#ea580c]' : 'hover:bg-white'}`} aria-label={kid.name}>
-                <Avatar kid={kid} selected={friendId === kid.id} />
+              <button key={kid.id} onClick={() => setFriendIds(friendIds.includes(kid.id) ? friendIds.filter(id => id !== kid.id) : (friendIds.length < 2 ? [...friendIds, kid.id] : friendIds))} className={`rounded-3xl p-2 transition active:scale-95 ${friendIds.includes(kid.id) ? 'bg-[#ffedd5] ring-4 ring-[#ea580c]' : 'hover:bg-white'}`} aria-label={kid.name}>
+                <Avatar kid={kid} selected={friendIds.includes(kid.id)} />
               </button>
             ))}
           </div>
           <div className="sticky bottom-3 mt-6 flex justify-center gap-8">
-            <button onClick={() => { setFriendId(null); setPhase('area') }} className={`${iconButton} border-sky-200 bg-sky-500`} aria-label="自己选区" title="自己选区"><UserRound className="size-9" /></button>
-            {friend && <button onClick={() => setPhase('area')} className={`${iconButton} border-emerald-200 bg-emerald-500`} aria-label="确认朋友" title="确认朋友"><Check className="size-10" strokeWidth={3.5} /></button>}
+            <button onClick={() => setPhase('area')} className={`${iconButton} border-emerald-200 bg-emerald-500`} aria-label="确认朋友" title="确认朋友"><Check className="size-10" strokeWidth={3.5} /></button>
+            <button onClick={() => { setFriendIds([]); setPhase('area') }} className={`${iconButton} border-rose-200 bg-rose-500`} aria-label="直接游戏" title="直接游戏"><X className="size-10" strokeWidth={3.5} /></button>
           </div>
         </main>
       )}
 
       {phase === 'area' && self && (
         <main className="mx-auto flex max-w-6xl flex-col py-6">
+          <button onClick={() => setPhase('friend')} className="mb-3 flex size-12 items-center justify-center self-start rounded-full border bg-white" aria-label="返回朋友" title="返回"><ArrowLeft className="size-6" /></button>
           <div className="mb-5 flex items-center justify-center gap-3">
             <Avatar kid={self} selected />
-            {friend && <><Handshake className="size-7 text-[#ea580c]" /><Avatar kid={friend} selected /></>}
+            {friends.map(kid => <span key={kid.id} className="flex items-center gap-3"><Handshake className="size-7 text-[#ea580c]" /><Avatar kid={kid} selected /></span>)}
           </div>
           <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
             {areas.map(area => {
@@ -258,7 +267,7 @@ export default function ChildSelect() {
         <main className="flex min-h-[calc(100vh-100px)] items-center justify-center">
           <div className="flex items-center gap-5 rounded-3xl border-4 border-[#c2410c] bg-white p-7 shadow-2xl">
             <Avatar kid={self} selected large />
-            {friend && <><Handshake className="size-10 text-[#ea580c]" /><Avatar kid={friend} selected large /></>}
+            {friends.map(kid => <span key={kid.id} className="flex items-center gap-5"><Handshake className="size-10 text-[#ea580c]" /><Avatar kid={kid} selected large /></span>)}
             <div className="flex flex-col items-center"><span className="text-7xl">{doneArea.emoji || FALLBACK_EMOJI[doneArea.name] || '🧸'}</span><Check className="mt-2 size-12 text-emerald-500" strokeWidth={3.5} /></div>
           </div>
         </main>

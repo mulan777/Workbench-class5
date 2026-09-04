@@ -69,8 +69,11 @@ export default async function miscRoutes(app) {
   })
 
   // 名册
-  app.get('/api/students', async () => {
-    return app.db.prepare('SELECT id,sid,name,avatar,active FROM students ORDER BY sid').all().map(maskStudentFields)
+  app.get('/api/students', { preHandler: [app.auth] }, async () => {
+    return app.db.prepare('SELECT id,sid,name,avatar,active FROM students ORDER BY sid').all()
+  })
+  app.get('/api/area-selection/students', async () => {
+    return app.db.prepare('SELECT id,sid,name,avatar,active FROM students WHERE active=1 ORDER BY sid').all()
   })
   app.put('/api/students/:id', { preHandler: [app.auth] }, async (req, reply) => {
     const id = Number(req.params.id)
@@ -246,23 +249,29 @@ export default async function miscRoutes(app) {
   app.post('/api/area-selection/invitations', async (req, reply) => {
     const today = chinaToday()
     const inviterId = Number(req.body?.inviterStudentId)
-    const inviteeId = Number(req.body?.inviteeStudentId)
+    const inviteeIds = Array.isArray(req.body?.inviteeStudentIds)
+      ? [...new Set(req.body.inviteeStudentIds.map(Number).filter(Boolean))]
+      : [Number(req.body?.inviteeStudentId)].filter(Boolean)
     const area = String(req.body?.area || '').trim()
-    if (!inviterId || !inviteeId || inviterId === inviteeId || !area) return reply.code(400).send({ error: '邀请参数错误' })
+    if (!inviterId || !area || inviteeIds.length < 1 || inviteeIds.length > 2 || inviteeIds.includes(inviterId)) return reply.code(400).send({ error: '邀请参数错误' })
     const inviter = app.db.prepare('SELECT id,name,active FROM students WHERE id=?').get(inviterId)
-    const invitee = app.db.prepare('SELECT id,name,active FROM students WHERE id=?').get(inviteeId)
     const areaRow = app.db.prepare('SELECT name FROM area_settings WHERE name=?').get(area)
-    if (!inviter?.active || !invitee?.active || !areaRow) return reply.code(400).send({ error: '幼儿或区域不存在' })
-    if (app.db.prepare(`SELECT 1 FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).get(inviteeId, today, today)) return reply.code(409).send({ error: '对方今天已经选好区域了' })
+    if (!inviter?.active || !areaRow) return reply.code(400).send({ error: '幼儿或区域不存在' })
+    const placeholders = inviteeIds.map(() => '?').join(',')
+    const invitees = app.db.prepare(`SELECT id,name,active FROM students WHERE id IN (${placeholders})`).all(...inviteeIds)
+    if (invitees.length !== inviteeIds.length || invitees.some(x => !x.active)) return reply.code(400).send({ error: '受邀幼儿不存在或已停用' })
+    for (const inviteeId of inviteeIds) {
+      if (app.db.prepare(`SELECT 1 FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).get(inviteeId, today, today)) return reply.code(409).send({ error: '有孩子今天已经选好区域了' })
+    }
     const week = Number(req.body?.week) || 1
     const tx = app.db.transaction(() => {
-      app.db.prepare(`UPDATE area_invitations SET status='cancelled',responded_at=datetime('now') WHERE date=? AND (inviter_student_id=? OR invitee_student_id=?) AND status='pending'`).run(today, inviterId, inviteeId)
+      app.db.prepare(`UPDATE area_invitations SET status='cancelled',responded_at=datetime('now') WHERE date=? AND inviter_student_id=? AND status='pending'`).run(today, inviterId)
       app.db.prepare(`DELETE FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).run(inviterId, today, today)
       app.db.prepare(`INSERT INTO area_records(week,date,area,student_id,type,created_by) VALUES (?,?,?,?,'自主选区·邀请',1)`).run(week, today, areaRow.name, inviterId)
-      const r = app.db.prepare(`INSERT INTO area_invitations(date,week,inviter_student_id,invitee_student_id,area,status) VALUES (?,?,?,?,?,'pending')`).run(today, week, inviterId, inviteeId, areaRow.name)
-      return r.lastInsertRowid
+      const ins = app.db.prepare(`INSERT INTO area_invitations(date,week,inviter_student_id,invitee_student_id,area,status) VALUES (?,?,?,?,?,'pending')`)
+      return inviteeIds.map(id => ins.run(today, week, inviterId, id, areaRow.name).lastInsertRowid)
     })
-    return { ok: true, id: tx(), date: today, area: areaRow.name }
+    return { ok: true, ids: tx(), date: today, area: areaRow.name }
   })
 
   app.post('/api/area-selection/invitations/:id/accept', async (req, reply) => {
@@ -277,7 +286,9 @@ export default async function miscRoutes(app) {
       const inviter = app.db.prepare('SELECT name FROM students WHERE id=?').get(row.inviter_student_id)
       const invitee = app.db.prepare('SELECT name FROM students WHERE id=?').get(row.invitee_student_id)
       app.db.prepare(`INSERT INTO area_records(week,date,area,student_id,partner_name,type,created_by) VALUES (?,?,?,?,?,'自主选区·受邀',1)`).run(row.week, today, row.area, row.invitee_student_id, inviter?.name || null)
-      app.db.prepare(`UPDATE area_records SET partner_name=? WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).run(invitee?.name || null, row.inviter_student_id, today, today)
+      const inviterRecord = app.db.prepare(`SELECT partner_name FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?)) ORDER BY id DESC LIMIT 1`).get(row.inviter_student_id, today, today)
+      const partners = [inviterRecord?.partner_name, invitee?.name].filter(Boolean).join('、')
+      app.db.prepare(`UPDATE area_records SET partner_name=? WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).run(partners || null, row.inviter_student_id, today, today)
       app.db.prepare(`UPDATE area_invitations SET status='accepted',responded_at=datetime('now') WHERE id=?`).run(id)
       app.db.prepare(`UPDATE area_invitations SET status='cancelled',responded_at=datetime('now') WHERE date=? AND invitee_student_id=? AND status='pending' AND id<>?`).run(today, row.invitee_student_id, id)
     })
@@ -309,7 +320,7 @@ export default async function miscRoutes(app) {
       WHERE r.date=? OR (r.date IS NULL AND date(r.created_at)=?)`).all(date, date)
 
     const invitations = app.db.prepare(`SELECT i.id,i.date,i.week,i.area,i.status,i.inviter_student_id,i.invitee_student_id,s.name inviter_name,s.avatar inviter_avatar FROM area_invitations i JOIN students s ON s.id=i.inviter_student_id WHERE i.date=? AND i.status='pending' ORDER BY i.id DESC`).all(date)
-    return { date, week, areas, students:students.map(maskStudentFields), records:records.map(maskStudentFields), invitations:invitations.map(maskStudentFields) }
+    return { date, week, areas, students, records, invitations }
   })
 
   // 儿童自主选区（拖拽提交 / 调整区域 / 移除）
@@ -356,6 +367,45 @@ export default async function miscRoutes(app) {
     return { ok: true, id: recordId, area: areaRow.name, studentId: stuId }
   })
 
+  // 邀请统计：教师端按日期范围查看成功、失败和每日明细
+  app.get('/api/area-invitations', { preHandler: [app.auth] }, async (req) => {
+    const range = Math.min(365, Math.max(1, Number(req.query?.range) || 7))
+    const end = String(req.query?.end || chinaToday())
+    const d = new Date(end + 'T00:00:00'); d.setDate(d.getDate() - range + 1)
+    const start = d.toISOString().slice(0, 10)
+    const rows = app.db.prepare(`
+      SELECT i.id,i.date,i.area,i.status,i.created_at,i.responded_at,
+             i.inviter_student_id,i.invitee_student_id,
+             a.name inviter_name,a.sid inviter_sid,a.avatar inviter_avatar,
+             b.name invitee_name,b.sid invitee_sid,b.avatar invitee_avatar
+      FROM area_invitations i
+      JOIN students a ON a.id=i.inviter_student_id
+      JOIN students b ON b.id=i.invitee_student_id
+      WHERE i.date BETWEEN ? AND ?
+      ORDER BY i.date DESC, i.id DESC`).all(start, end)
+    const success = app.db.prepare(`
+      SELECT i.inviter_student_id,a.name inviter_name,a.sid inviter_sid,
+             i.invitee_student_id,b.name invitee_name,b.sid invitee_sid,
+             COUNT(*) count
+      FROM area_invitations i
+      JOIN students a ON a.id=i.inviter_student_id
+      JOIN students b ON b.id=i.invitee_student_id
+      WHERE i.date BETWEEN ? AND ? AND i.status='accepted'
+      GROUP BY i.inviter_student_id,i.invitee_student_id
+      ORDER BY count DESC, inviter_sid, invitee_sid`).all(start, end)
+    const failed = app.db.prepare(`
+      SELECT i.inviter_student_id,a.name inviter_name,a.sid inviter_sid,
+             i.invitee_student_id,b.name invitee_name,b.sid invitee_sid,
+             COUNT(*) count
+      FROM area_invitations i
+      JOIN students a ON a.id=i.inviter_student_id
+      JOIN students b ON b.id=i.invitee_student_id
+      WHERE i.date BETWEEN ? AND ? AND i.status='rejected'
+      GROUP BY i.inviter_student_id,i.invitee_student_id
+      ORDER BY count DESC, inviter_sid, invitee_sid`).all(start, end)
+    return { range, start, end, success, failed, invitations: rows }
+  })
+
   // 区域选区
   app.get('/api/area-records', { preHandler: [app.auth] }, async (req) => {
     seedAreas(app.db)
@@ -365,7 +415,7 @@ export default async function miscRoutes(app) {
     const start = d.toISOString().slice(0,10)
     const areas = app.db.prepare('SELECT name,emoji FROM area_settings ORDER BY sort,id').all()
     const rows = app.db.prepare(`SELECT r.*,s.name student_name,s.avatar student_avatar FROM area_records r LEFT JOIN students s ON s.id=r.student_id WHERE COALESCE(r.date,date(r.created_at)) BETWEEN ? AND ? ORDER BY created_at DESC`).all(start,end)
-    return { range,start,end,areas: areas.map(a=>a.name),areaMeta:areas,types:AREA_TYPES,records:rows.map(maskStudentFields) }
+    return { range,start,end,areas: areas.map(a=>a.name),areaMeta:areas,types:AREA_TYPES,records:rows }
   })
   app.post('/api/area-records', { preHandler: [app.auth] }, async (req, reply) => {
     const b = req.body || {}

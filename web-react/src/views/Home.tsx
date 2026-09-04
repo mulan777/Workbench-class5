@@ -232,7 +232,7 @@ export default function Home() {
                 <CardHeader className="pb-2.5 border-b border-border/40 bg-muted/20 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-sm font-serif font-bold flex items-center gap-1.5">
-                      <Users className="size-4 text-[#ea580c]" /> 今日儿童选区速览
+                      <Users className="size-4 text-[#ea580c]" /> 今日区域记录速览
                     </CardTitle>
                     <CardDescription className="text-xs">
                       今日已选 {data.todaySelectedCount} 人 · 待选 {data.totalStudents - data.todaySelectedCount} 人
@@ -245,7 +245,7 @@ export default function Home() {
                 <CardContent className="pt-3">
                   {!data.recentAreaRecords.length ? (
                     <div className="py-6 text-center text-xs text-muted-foreground">
-                      今日暂无自主选区记录，可在选区大屏开始
+                      今日暂无区域记录
                     </div>
                   ) : (
                     <div className="grid grid-cols-2 gap-2">
