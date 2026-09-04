@@ -1,12 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { api, weekOf } from '@/lib/api'
+import { playVoice } from '@/lib/audioVoice'
 import { toast } from '@/lib/ui'
 import {
   ArrowLeft, Check, Handshake, Maximize, Minimize, RefreshCw,
   Sparkles, UserRound, Users, X
 } from 'lucide-react'
 
-type Area = { id: number; name: string; emoji: string; sort: number }
+type Area = { id: number; name: string; emoji: string; sort: number; capacity: number | null }
 type Student = { id: number; sid: string; name: string; avatar: string | null }
 type SelectionRecord = {
   id: number; area: string; student_id: number; student_name: string
@@ -65,6 +66,7 @@ export default function ChildSelect() {
   const [doneArea, setDoneArea] = useState<Area | null>(null)
   const [busy, setBusy] = useState(false)
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const idleTimerRef = useRef<number | null>(null)
 
   async function loadData() {
     try {
@@ -88,6 +90,28 @@ export default function ChildSelect() {
   const selectedIds = useMemo(() => new Set(records.map(r => r.student_id)), [records])
   const self = students.find(s => s.id === selfId) || null
   const friends = students.filter(s => friendIds.includes(s.id))
+  const areaCount = (name: string) => new Set(records.filter(r => r.area === name).map(r => r.student_id)).size
+
+  // 子阶段 60 秒无触控自动回到找号码页；待机页不计时
+  useEffect(() => {
+    if (phase === 'self' || phase === 'done') return
+    const resetIdle = () => {
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
+      idleTimerRef.current = window.setTimeout(() => {
+        reset()
+        playVoice('我们重新找一找自己的号码吧')
+      }, 60000)
+    }
+    const onActivity = () => resetIdle()
+    window.addEventListener('touchstart', onActivity, { passive: true })
+    window.addEventListener('mousedown', onActivity)
+    resetIdle()
+    return () => {
+      window.removeEventListener('touchstart', onActivity)
+      window.removeEventListener('mousedown', onActivity)
+      if (idleTimerRef.current) window.clearTimeout(idleTimerRef.current)
+    }
+  }, [phase])
 
   function reset() {
     setPhase('self'); setSelfId(null); setFriendIds([])
@@ -96,9 +120,11 @@ export default function ChildSelect() {
   }
 
   function chooseSelf(kid: Student) {
+    if (selectedIds.has(kid.id)) { toast('这个号码已经选好啦'); return }
     const pending = invitations.filter(i => i.invitee_student_id === kid.id)
     setSelfId(kid.id)
     setFriendIds([])
+    playVoice(pending.length ? '有小朋友想和你一起玩' : '今天想找谁一起玩呢')
     if (pending.length) {
       setActiveInvitations(pending)
       setPhase('invitation')
@@ -126,7 +152,7 @@ export default function ChildSelect() {
     setBusy(true)
     try {
       await api(`/api/area-selection/invitations/${invitation.id}/accept`, { method: 'POST' })
-      setDoneArea(area); setPhase('done'); playBeep()
+      setDoneArea(area); setPhase('done'); playVoice(`选好啦，快去${area.name}探索吧`); playBeep()
       setTimeout(reset, 1800)
     } catch (e: any) { toast.error(e.message); setBusy(false) }
   }
@@ -144,7 +170,7 @@ export default function ChildSelect() {
           method: 'POST', body: JSON.stringify({ studentId: self.id, area: area.name, week: weekOf(date) })
         })
       }
-      setDoneArea(area); setPhase('done'); playBeep()
+      setDoneArea(area); setPhase('done'); playVoice(`选好啦，快去${area.name}探索吧`); playBeep()
       setTimeout(reset, 1800)
     } catch (e: any) { toast.error(e.message); setBusy(false) }
   }
@@ -235,31 +261,42 @@ export default function ChildSelect() {
           </div>
           <div className="sticky bottom-3 mt-6 flex justify-center gap-8">
             <button onClick={() => setPhase('area')} className={`${iconButton} border-emerald-200 bg-emerald-500`} aria-label="确认朋友" title="确认朋友"><Check className="size-10" strokeWidth={3.5} /></button>
-            <button onClick={() => { setFriendIds([]); setPhase('area') }} className={`${iconButton} border-rose-200 bg-rose-500`} aria-label="直接游戏" title="直接游戏"><X className="size-10" strokeWidth={3.5} /></button>
+            <button onClick={() => { setFriendIds([]); setPhase('area'); playVoice('自己玩也很棒') }} className={`${iconButton} border-orange-200 bg-orange-400`} aria-label="自己玩" title="自己玩"><UserRound className="size-10" strokeWidth={2.8} /></button>
           </div>
         </main>
       )}
 
       {phase === 'area' && self && (
-        <main className="mx-auto flex max-w-6xl flex-col py-6">
+        <main className="mx-auto flex max-w-6xl flex-col py-2 sm:py-4">
           <button onClick={() => setPhase('friend')} className="mb-3 flex size-12 items-center justify-center self-start rounded-full border bg-white" aria-label="返回朋友" title="返回"><ArrowLeft className="size-6" /></button>
-          <div className="mb-5 flex items-center justify-center gap-3">
+          <div className="mb-2 flex items-center justify-center gap-2 sm:mb-3 sm:gap-3">
             <Avatar kid={self} selected />
             {friends.map(kid => <span key={kid.id} className="flex items-center gap-3"><Handshake className="size-7 text-[#ea580c]" /><Avatar kid={kid} selected /></span>)}
           </div>
-          <div className="grid flex-1 grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="grid flex-1 grid-cols-3 gap-2 sm:grid-cols-4 lg:grid-cols-4">
             {areas.map(area => {
-              const count = records.filter(r => r.area === area.name).length
+              const count = areaCount(area.name)
+              const need = 1 + friends.length
+              const full = area.capacity !== null && count >= area.capacity
+              const enough = area.capacity === null || count + need <= area.capacity
+              const slots = area.capacity === null ? [] : Array.from({ length: Math.min(area.capacity, 8) }, (_, i) => i)
               return (
-                <button key={area.id} disabled={busy} onClick={() => chooseArea(area)} className="relative flex min-h-40 flex-col items-center justify-center rounded-3xl border-4 border-[#e7d7bd] bg-white p-5 shadow-md transition hover:-translate-y-1 hover:border-[#ea580c] hover:bg-[#fff7ed] active:scale-95 disabled:opacity-50">
-                  <span className="text-6xl sm:text-7xl">{area.emoji || FALLBACK_EMOJI[area.name] || '🧸'}</span>
-                  <span className="mt-3 font-serif text-lg font-bold sm:text-xl">{area.name}</span>
-                  <span className="absolute right-3 top-3 flex min-w-8 items-center justify-center rounded-full bg-[#f3eadb] px-2 py-1 text-sm font-bold text-[#8b6f4d]"><Users className="mr-1 size-4" />{count}</span>
+                <button key={area.id} disabled={busy || !enough} onClick={() => chooseArea(area)} className={`relative flex min-h-24 flex-col items-center justify-center rounded-2xl border-2 p-1.5 shadow-md transition active:scale-95 ${!enough ? 'cursor-not-allowed border-[#ded8cc] bg-[#f1eee8] opacity-70' : 'border-[#e7d7bd] bg-white hover:-translate-y-1 hover:border-[#ea580c] hover:bg-[#fff7ed]'}`}>
+                  <span className="text-3xl sm:text-5xl">{area.emoji || FALLBACK_EMOJI[area.name] || '🧸'}</span>
+                  <span className="mt-0.5 font-serif text-xs font-bold sm:text-base">{area.name}</span>
+                  {area.capacity === null ? (
+                    <span className="mt-2 rounded-full bg-[#f3eadb] px-2.5 py-1 text-xs font-bold text-[#8b6f4d]">可以继续加入</span>
+                  ) : (
+                    <div className="mt-0.5 flex max-w-full flex-wrap justify-center gap-0.5" aria-label={`${area.name}已进入${count}人，容量${area.capacity}人`}>
+                      {slots.map(i => <span key={i} className={`flex size-4 items-center justify-center rounded-full border text-[9px] font-bold ${i < count ? 'border-[#ea580c] bg-[#ea580c] text-white' : 'border-[#d9c9ae] bg-[#fffaf0] text-[#bca98e]'}`}>{i < count ? '✓' : ''}</span>)}
+                    </div>
+                  )}
+                  <span className={`mt-0.5 text-[10px] font-bold ${full ? 'text-[#9f1239]' : 'text-[#8b6f4d]'}`}>{full ? '已满员' : area.capacity === null ? '不限人数' : `${count} / ${area.capacity} 人`}</span>
                 </button>
               )
             })}
           </div>
-          <button onClick={() => setPhase('friend')} className="mx-auto mt-5 flex size-12 items-center justify-center rounded-full border bg-white" aria-label="返回" title="返回"><ArrowLeft className="size-6" /></button>
+          <button onClick={() => setPhase('friend')} className="mx-auto mt-2 flex size-10 sm:mt-4 sm:size-12 items-center justify-center rounded-full border bg-white" aria-label="返回" title="返回"><ArrowLeft className="size-6" /></button>
         </main>
       )}
 

@@ -22,7 +22,7 @@ import {
   UserCheck, UserX, RefreshCw, ExternalLink, Sparkles, Camera, Handshake, CheckCircle2, X
 } from 'lucide-react'
 
-type AreaMeta = { id: number; name: string; emoji: string; sort: number }
+type AreaMeta = { id: number; name: string; emoji: string; sort: number; capacity: number | null }
 
 type Rec = {
   id: number
@@ -109,7 +109,8 @@ export default function Area() {
   const [areas, setAreas] = useState<AreaMeta[]>([])
   const [newName, setNewName] = useState('')
   const [newEmoji, setNewEmoji] = useState('🧸')
-  const [editRow, setEditRow] = useState<{ id: number; name: string; emoji: string } | null>(null)
+  const [newCapacity, setNewCapacity] = useState('6')
+  const [editRow, setEditRow] = useState<{ id: number; name: string; emoji: string; capacity: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [inviteStats, setInviteStats] = useState<any>({ success: [], failed: [], invitations: [] })
 
@@ -198,7 +199,7 @@ export default function Area() {
       const list: any = await api('/api/areas')
       setAreas(list)
       setEditRow(null)
-      setNewName(''); setNewEmoji('🧸')
+      setNewName(''); setNewEmoji('🧸'); setNewCapacity('6')
       setMgrOpen(true)
     } catch (e: any) { toast.error(e.message) }
   }
@@ -209,7 +210,7 @@ export default function Area() {
     try {
       const created: any = await api('/api/areas', {
         method: 'POST',
-        body: JSON.stringify({ name: newName.trim(), emoji: newEmoji.trim() || '🧸' })
+        body: JSON.stringify({ name: newName.trim(), emoji: newEmoji.trim() || '🧸', capacity: newCapacity.trim() === '' ? null : Number(newCapacity) })
       })
       setAreas(l => [...l, created])
       setNewName(''); setNewEmoji('🧸')
@@ -225,9 +226,9 @@ export default function Area() {
     try {
       await api('/api/areas/' + editRow.id, {
         method: 'PUT',
-        body: JSON.stringify({ name: editRow.name.trim(), emoji: editRow.emoji.trim() || '🧸' })
+        body: JSON.stringify({ name: editRow.name.trim(), emoji: editRow.emoji.trim() || '🧸', capacity: editRow.capacity.trim() === '' ? null : Number(editRow.capacity) })
       })
-      setAreas(l => l.map(a => a.id === editRow.id ? { ...a, name: editRow.name.trim(), emoji: editRow.emoji.trim() || '🧸' } : a))
+      setAreas(l => l.map(a => a.id === editRow.id ? { ...a, name: editRow.name.trim(), emoji: editRow.emoji.trim() || '🧸', capacity: editRow.capacity.trim() === '' ? null : Number(editRow.capacity) } : a))
       setEditRow(null)
       toast('区域已更新')
       await load()
@@ -507,11 +508,11 @@ export default function Area() {
               <div key={a.id} className="rounded-xl border border-border bg-card px-3 py-2">
                 {editRow?.id === a.id ? (
                   <div className="space-y-2">
-                    <div className="flex gap-2">
+                    <div className="grid grid-cols-[4rem_1fr_7rem] gap-2">
                       <Input
                         value={editRow.emoji}
                         onChange={e => setEditRow({ ...editRow, emoji: e.target.value })}
-                        className="w-16 text-center"
+                        className="text-center"
                         placeholder="🧸"
                       />
                       <Input
@@ -519,7 +520,9 @@ export default function Area() {
                         onChange={e => setEditRow({ ...editRow, name: e.target.value })}
                         placeholder="区域名称"
                       />
+                      <Input type="number" min="1" max="99" value={editRow.capacity} onChange={e => setEditRow({ ...editRow, capacity: e.target.value })} placeholder="人数上限" title="留空表示不限" />
                     </div>
+                    <p className="mt-1 text-[11px] text-muted-foreground">人数上限：留空表示不限人数</p>
                     <div className="flex justify-end gap-2">
                       <Button size="sm" variant="outline" onClick={() => setEditRow(null)}>取消</Button>
                       <Button size="sm" onClick={saveEdit} disabled={busy}>保存</Button>
@@ -530,8 +533,9 @@ export default function Area() {
                     <span className="flex items-center gap-2 text-sm">
                       <span className="text-lg leading-none">{a.emoji || FALLBACK_EMOJI[a.name] || '🧸'}</span> {a.name}
                     </span>
+                    <span className="mr-2 text-xs text-muted-foreground">{a.capacity == null ? '不限' : `最多 ${a.capacity} 人`}</span>
                     <span className="flex items-center gap-0.5 opacity-60 transition group-hover:opacity-100">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditRow({ id: a.id, name: a.name, emoji: a.emoji })}>
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setEditRow({ id: a.id, name: a.name, emoji: a.emoji, capacity: a.capacity == null ? '' : String(a.capacity) })}>
                         <Pencil className="size-3.5" />
                       </Button>
                       <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => removeArea(a)}>
@@ -545,7 +549,7 @@ export default function Area() {
             {!areas.length && <p className="py-4 text-center text-sm text-muted-foreground">还没有区域，在下方添加第一个吧</p>}
           </div>
           <div className="rounded-xl border border-dashed border-border p-3">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">新增区域</p>
+            <p className="mb-2 text-xs font-medium text-muted-foreground">新增区域（人数上限留空表示不限）</p>
             <div className="flex gap-2">
               <Input
                 value={newEmoji}
@@ -560,6 +564,7 @@ export default function Area() {
                 onKeyDown={e => { if (e.key === 'Enter') addArea() }}
                 placeholder="区域名称，如：木工坊"
               />
+              <Input type="number" min="1" max="99" value={newCapacity} onChange={e => setNewCapacity(e.target.value)} placeholder="人数上限" title="留空表示不限" className="w-24" />
               <Button onClick={addArea} disabled={busy || !newName.trim()} className="shrink-0">
                 添加
               </Button>

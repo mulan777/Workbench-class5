@@ -58,7 +58,7 @@ export default function Home() {
         weekActiveKidsCount: weekActiveKids.size,
         topPairs: (stats as any).topPairs || [],
         recentAreaRecords: (areaToday.records || []).slice(0, 6),
-        recentPhotos: (t1 || []).filter((i: any) => i.photo_path).slice(0, 8),
+        recentPhotos: (t2 || []).filter((i: any) => i.photo_path && i.section === 'gameDaily').slice(0, 8),
         totalStudents: ws.students.length || 25
       })
     })()
@@ -265,11 +265,11 @@ export default function Home() {
                 <CardHeader className="pb-2.5 border-b border-border/40 bg-muted/20 flex flex-row items-center justify-between">
                   <div>
                     <CardTitle className="text-sm font-serif font-bold flex items-center gap-1.5">
-                      <Camera className="size-4 text-[#be123c]" /> 想念与重逢相册
+                      <Camera className="size-4 text-[#be123c]" /> 好朋友新故事
                     </CardTitle>
                     <CardDescription className="text-xs">儿童自主拍照与时光记录</CardDescription>
                   </div>
-                  <Link to="/theme1" className="text-xs text-[#be123c] hover:underline flex items-center gap-0.5">
+                  <Link to="/theme2" className="text-xs text-[#be123c] hover:underline flex items-center gap-0.5">
                     进入板块 <ChevronRight className="size-3" />
                   </Link>
                 </CardHeader>
