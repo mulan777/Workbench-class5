@@ -169,7 +169,7 @@ export default function Users() {
           body: JSON.stringify({
             displayName: tchForm.displayName.trim(),
             role: tchForm.role,
-            ...(tchForm.password.trim() ? { password: tchForm.password.trim() } : {})
+            ...(tchForm.password.trim() ? { newPassword: tchForm.password.trim() } : {})
           })
         })
         toast('教师信息已更新')

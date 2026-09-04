@@ -18,7 +18,7 @@ import { Badge } from '@/components/ui/badge'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@/components/ui/tooltip'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import {
-  Trash2, Settings2, Pencil, Loader2, Users, HeartHandshake, ListChecks,
+  Trash2, Settings2, Pencil, Loader2, UserRound, Users, HeartHandshake, ListChecks,
   UserCheck, UserX, RefreshCw, ExternalLink, Sparkles, Camera, Handshake, CheckCircle2, X
 } from 'lucide-react'
 
@@ -33,6 +33,7 @@ type Rec = {
   student_id: number | null
   student_name: string | null
   student_avatar?: string | null
+  sid?: string | null
   partner_name: string | null
   content: string | null
   q1: string | null
@@ -58,25 +59,23 @@ function tint(c: Candy) {
   }
 }
 
-function StuAvatar({ name, avatar, cnt, idx }: { name: string; avatar?: string | null; cnt?: number; idx: number }) {
-  const c = CANDIES[idx % CANDIES.length]
+function NumberBadge({ sid, size = 'normal' }: { sid: string; size?: 'normal' | 'large' }) {
+  const n = sid.replace(/^0+/, '') || sid || '?'
+  const palette = ['pink', 'blue', 'green', 'yellow', 'purple'] as const
+  const c = palette[(Number(sid) || 1) % palette.length]
+  return <div className={`${size === 'large' ? 'size-24 sm:size-28' : 'size-11'} flex shrink-0 items-center justify-center rounded-2xl border shadow-xs`} style={tint(c)} aria-label={`学号${sid}`}>
+    <UserRound className={`${size === 'large' ? 'size-10 sm:size-12' : 'size-5'} opacity-70`} strokeWidth={2.2} />
+    <span className={`${size === 'large' ? 'text-xl sm:text-2xl' : 'text-xs'} -ml-1 font-bold`}>{n}</span>
+  </div>
+}
+
+function StuAvatar({ name, sid, cnt, idx }: { name: string; sid?: string | null; cnt?: number; idx: number }) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <div className="flex w-14 cursor-default flex-col items-center gap-1">
-          <div
-            className="flex size-11 items-center justify-center rounded-2xl overflow-hidden text-[15px] font-semibold shadow-xs"
-            style={tint(c)}
-          >
-            {avatar ? (
-              <img src={avatar} alt={name} className="w-full h-full object-cover" />
-            ) : (
-              name.slice(-1)
-            )}
-          </div>
-          <span className="w-full truncate text-center text-[11px] leading-none text-muted-foreground font-medium">
-            {name}
-          </span>
+          <NumberBadge sid={sid || String(idx + 1).padStart(2, '0')} />
+          <span className="w-full truncate text-center text-[11px] leading-none text-muted-foreground font-medium">{name}</span>
         </div>
       </TooltipTrigger>
       <TooltipContent side="top">{name}{cnt ? ` · 本周选入 ${cnt} 次` : ''}</TooltipContent>
@@ -137,14 +136,14 @@ export default function Area() {
   /* ---------- 第一部分：各区域记录与统计 ---------- */
   const areaStats = useMemo(() => {
     // area -> (studentKey -> {name, avatar, cnt})
-    const map = new Map<string, Map<string, { name: string; avatar: string | null; cnt: number }>>()
+const map = new Map<string, Map<string, { name: string; sid: string | null; cnt: number }>>()
     for (const r of records) {
       const nm = r.student_name
       if (!nm) continue
       const key = String(r.student_id ?? 'n:' + nm)
       if (!map.has(r.area)) map.set(r.area, new Map())
       const g = map.get(r.area)!
-      if (!g.has(key)) g.set(key, { name: nm, avatar: r.student_avatar || null, cnt: 0 })
+      if (!g.has(key)) g.set(key, { name: nm, sid: r.sid || null, cnt: 0 })
       const it = g.get(key)!
       it.cnt++
     }
@@ -354,7 +353,7 @@ export default function Area() {
                         ) : (
                           <div className="flex flex-wrap gap-2.5">
                             {kids.map((k, idx) => (
-                              <StuAvatar key={k.name} name={k.name} avatar={k.avatar} cnt={k.cnt} idx={idx} />
+                              <StuAvatar key={k.name} name={k.name} sid={k.sid} cnt={k.cnt} idx={idx} />
                             ))}
                           </div>
                         )}
@@ -456,7 +455,7 @@ export default function Area() {
           </Card>
         </div>
         <Card>
-          <CardHeader><CardTitle className="text-base flex items-center gap-2"><ListChecks className="size-4 text-primary" /> 每日邀请记录</CardTitle><CardDescription>{inviteStats.start || period.start} 至 {inviteStats.end || period.end}，包含成功、拒绝和待处理</CardDescription></CardHeader>
+          <CardHeader><CardTitle className="text-base flex items-center gap-2"><ListChecks className="size-4 text-primary" /> 每日邀请记录</CardTitle><CardDescription>{inviteStats.start || period.start} 至 {inviteStats.end || period.end}，包含成功、拒绝、取消和待处理</CardDescription></CardHeader>
           <CardContent className="space-y-1.5">{!inviteStats.invitations?.length ? <div className="py-8 text-center text-xs text-muted-foreground">暂无邀请记录</div> : inviteStats.invitations.map((x: any) => <div key={x.id} className="flex flex-wrap items-center gap-2 rounded-lg border border-border/60 bg-accent/30 px-3 py-2 text-xs"><span className="shrink-0 text-muted-foreground">{x.date}</span><span className="font-medium">{x.inviter_name} → {x.invitee_name}</span><Badge variant="outline">{FALLBACK_EMOJI[x.area] || '🧸'} {x.area}</Badge><Badge variant={x.status === 'accepted' ? 'default' : x.status === 'rejected' ? 'destructive' : 'secondary'}>{x.status === 'accepted' ? '成功' : x.status === 'rejected' ? '拒绝' : x.status === 'pending' ? '待处理' : x.status === 'cancelled' ? '已取消' : x.status}</Badge><span className="ml-auto text-muted-foreground">{x.responded_at || x.created_at}</span></div>)}</CardContent>
         </Card>
       </TabsContent>

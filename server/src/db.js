@@ -16,6 +16,11 @@ db.pragma('foreign_keys = ON')
 
 const schema = fs.readFileSync(path.join(__dirname, 'schema.sql'), 'utf8')
 db.exec(schema)
+// 兼容既有数据库：为区域设置补充容量字段，旧区域默认 6 人
+try { db.prepare('SELECT capacity FROM area_settings LIMIT 1').get() } catch {
+  db.exec('ALTER TABLE area_settings ADD COLUMN capacity INTEGER DEFAULT 6')
+}
+db.prepare('UPDATE area_settings SET capacity=6 WHERE capacity IS NULL').run()
 
 // JWT secret：环境变量优先，否则生成并持久化
 let JWT_SECRET = process.env.ZT_JWT_SECRET

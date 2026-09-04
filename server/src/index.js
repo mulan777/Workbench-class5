@@ -27,20 +27,18 @@ await app.register(authPlugin)
 await app.register(fastifyMultipart)
 await app.register(fastifyStatic, { root: UPLOAD_DIR, prefix: '/uploads/' })
 
-// 照片上传（multipart）
-app.post('/api/upload', async (req, reply) => {
+// 教师照片上传（儿童端必须使用专用接口）
+async function handleUpload(req, reply) {
   const f = await req.file()
   if (!f) return reply.code(400).send({ error: '未收到文件' })
   const buf = await f.toBuffer()
   if (buf.length > 15 * 1024 * 1024) return reply.code(400).send({ error: '图片不能超过15MB' })
   const { saveUpload } = await import('./lib/util.js')
-  try {
-    const url = await saveUpload(buf, f.mimetype)
-    return { url }
-  } catch (e) {
-    return reply.code(e.statusCode || 500).send({ error: e.message })
-  }
-})
+  try { return { url: await saveUpload(buf, f.mimetype) } }
+  catch (e) { return reply.code(e.statusCode || 500).send({ error: e.message }) }
+}
+app.post('/api/upload', { preHandler: [app.auth] }, handleUpload)
+app.post('/api/child-kiosk/upload', handleUpload)
 
 await app.register(authRoutes)
 await app.register(apiRoutes)

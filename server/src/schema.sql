@@ -51,15 +51,6 @@ CREATE TABLE IF NOT EXISTS area_records (
 CREATE INDEX IF NOT EXISTS idx_area_week ON area_records(week, area);
 CREATE INDEX IF NOT EXISTS idx_area_date ON area_records(date, area);
 
-CREATE TABLE IF NOT EXISTS council_records (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  week INTEGER NOT NULL,
-  source TEXT, evidence TEXT, proposal TEXT, reason TEXT,
-  dissent TEXT, result TEXT, feedback TEXT,
-  created_by INTEGER NOT NULL REFERENCES teachers(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
 -- 素材墙统一表：theme1/2/3 共用，kind 区分板块
 CREATE TABLE IF NOT EXISTS theme_items (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -77,34 +68,6 @@ CREATE TABLE IF NOT EXISTS theme_items (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_theme_week ON theme_items(week, wall, section);
-
-CREATE TABLE IF NOT EXISTS troubles (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  week INTEGER NOT NULL,
-  tag TEXT NOT NULL,
-  type TEXT NOT NULL,                -- 绘画/教师代写/家长记录
-  student_id INTEGER REFERENCES students(id),
-  content TEXT,
-  created_by INTEGER NOT NULL REFERENCES teachers(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-
-CREATE TABLE IF NOT EXISTS trouble_reactions (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  trouble_id INTEGER NOT NULL REFERENCES troubles(id) ON DELETE CASCADE,
-  kind TEXT NOT NULL,                -- empathy | vote
-  student_id INTEGER NOT NULL REFERENCES students(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-  UNIQUE(trouble_id, kind, student_id)
-);
-
-CREATE TABLE IF NOT EXISTS trackings (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  trouble_id INTEGER NOT NULL REFERENCES troubles(id) ON DELETE CASCADE,
-  content TEXT,
-  created_by INTEGER NOT NULL REFERENCES teachers(id),
-  created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
 
 CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,

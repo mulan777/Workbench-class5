@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import {
-  ClipboardCheck, Users, HeartHandshake, Flame,
+  ClipboardCheck, Users, HeartHandshake,
   TrendingUp, Inbox, Loader2, ArrowRight, Sparkles, Camera,
   UserCheck, CheckCircle2, Award, Calendar, Activity, ChevronRight
 } from 'lucide-react'
@@ -31,11 +31,10 @@ export default function Home() {
   useEffect(() => {
     let alive = true
     ;(async () => {
-      const [checkins, areaToday, areaRec, hot, t1, t2, stats] = await Promise.all([
+      const [checkins, areaToday, areaRec, t1, t2, stats] = await Promise.all([
         api(`/api/checkins?date=${ws.date}`),
         api(`/api/area-selection/today?date=${ws.date}`),
         api(`/api/area-records?range=${range}&end=${ws.date}`),
-        api(`/api/troubles?week=${ws.week}`),
         api('/api/theme/theme1?week=' + ws.week),
         api('/api/theme/theme2?week=' + ws.week),
         api(`/api/checkins/stats?range=${range}&end=${ws.date}`)
@@ -49,12 +48,11 @@ export default function Home() {
       ;(t2 || []).forEach((r: any) => r.student_id && weekActiveKids.add(r.student_id))
 
       setData({
-        todayCount: (checkins as any[]).length,
+        todayCount: (checkins as any[]).reduce((sum, c) => sum + (Array.isArray(c.pairs) ? c.pairs.length : 0), 0),
         todaySelectedCount: todaySelectedStus.size,
         weekTheme: (t1 as any[]).length,
         weekTheme2: (t2 as any[]).length,
         weekArea: (areaRec as any).records.length,
-        weekHot: (hot as any).troubles.length,
         weekActiveKidsCount: weekActiveKids.size,
         topPairs: (stats as any).topPairs || [],
         recentAreaRecords: (areaToday.records || []).slice(0, 6),
@@ -72,9 +70,9 @@ export default function Home() {
   const cards = [
     {
       key: 'checkin',
-      label: '今日签到',
+      label: '今日结伴',
       value: `${data?.todayCount ?? 0} 对`,
-      hint: '每日结伴同到',
+      hint: '签到板登记的结伴对数',
       icon: ClipboardCheck,
       to: '/checkin',
       edge: 'hsl(var(--candy-green))',
@@ -114,17 +112,7 @@ export default function Home() {
       chip: 'hsl(var(--candy-purple) / .14)',
       ink: 'hsl(262 45% 52%)'
     },
-    {
-      key: 'hot',
-      label: '热点问题',
-      value: `${data?.weekHot ?? 0} 个`,
-      hint: '幼儿同理心互动',
-      icon: Flame,
-      to: '/hot',
-      edge: 'hsl(var(--candy-blue))',
-      chip: 'hsl(var(--candy-blue) / .16)',
-      ink: 'hsl(204 55% 42%)'
-    }
+
   ]
 
   return (
@@ -150,7 +138,7 @@ export default function Home() {
 
       {!data ? (
         <div className="space-y-5">
-          <SkeletonCards n={5} />
+          <SkeletonCards n={4} />
           <Card>
             <CardContent className="flex h-64 items-center justify-center text-muted-foreground">
               <Loader2 className="mr-2 size-5 animate-spin" /> 正在汇总全班倾听数据…

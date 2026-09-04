@@ -42,10 +42,11 @@ function Avatar({ kid, selected = false, done = false, large = false }: {
   return (
     <div className="flex flex-col items-center gap-2">
       <div
-        className={`${large ? 'size-24 sm:size-28' : 'size-16 sm:size-20 md:size-24'} relative flex items-center justify-center overflow-hidden rounded-3xl border-2 text-2xl font-bold shadow-sm transition-all`}
+        className={`${large ? 'size-24 sm:size-28' : 'size-16 sm:size-20 md:size-20'} relative flex items-center justify-center rounded-3xl border-2 font-bold shadow-sm`}
         style={candyStyle(kid.id, selected)}
       >
-        {kid.sid.replace(/^0+/, '') || kid.sid || '?'}
+        <UserRound className={`${large ? 'size-10 sm:size-12' : 'size-6 sm:size-7'} opacity-70`} strokeWidth={2.2} />
+        <span className={`${large ? 'text-xl sm:text-2xl' : 'text-base sm:text-lg'} -ml-1`}>{kid.sid.replace(/^0+/, '') || kid.sid || '?'}</span>
         {done && <span className="absolute bottom-1 right-1 flex size-6 items-center justify-center rounded-full bg-emerald-500 text-white"><Check className="size-4" /></span>}
       </div>
       <span className="max-w-24 truncate text-center text-sm font-bold text-[#3c2f21] sm:text-base">{kid.name}</span>
@@ -167,7 +168,7 @@ export default function ChildSelect() {
         })
       } else {
         await api('/api/area-selection/select', {
-          method: 'POST', body: JSON.stringify({ studentId: self.id, area: area.name, week: weekOf(date) })
+          method: 'POST', body: JSON.stringify({ studentId: self.id, area: area.name, selectionType: 'solo' })
         })
       }
       setDoneArea(area); setPhase('done'); playVoice(`选好啦，快去${area.name}探索吧`); playBeep()
@@ -213,7 +214,7 @@ export default function ChildSelect() {
       </header>
 
       {phase === 'self' && (
-        <main className="mx-auto grid max-w-6xl grid-cols-5 gap-x-1 gap-y-3 py-7 sm:grid-cols-6 sm:gap-x-2 sm:gap-y-4 md:grid-cols-7 lg:grid-cols-8">
+        <main className="mx-auto grid max-w-6xl grid-cols-5 gap-x-1 gap-y-2 py-4 sm:grid-cols-6 sm:gap-x-2 sm:gap-y-3 md:grid-cols-7 lg:grid-cols-8">
           {students.map(kid => (
             <button key={kid.id} onClick={() => chooseSelf(kid)} className="rounded-3xl p-2 transition hover:bg-white hover:shadow-md active:scale-95" aria-label={kid.name}>
               <Avatar kid={kid} done={selectedIds.has(kid.id)} />

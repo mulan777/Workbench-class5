@@ -15,7 +15,6 @@ import Area from '@/views/Area'
 import Users from '@/views/Users'
 import Theme1 from '@/views/Theme1'
 import Theme2 from '@/views/Theme2'
-import Hot from '@/views/Hot'
 import ChildSelect from '@/views/ChildSelect'
 import ChildPhotoUpload from '@/views/ChildPhotoUpload'
 
@@ -32,7 +31,6 @@ function Guard() {
           <Route path="/users" element={<Users />} />
           <Route path="/theme1" element={<Theme1 />} />
           <Route path="/theme2" element={<Theme2 />} />
-          <Route path="/hot" element={<Hot />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AppShell>

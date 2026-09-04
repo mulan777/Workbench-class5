@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { api, upload } from '@/lib/api'
 import { toast, confirmDialog } from '@/lib/ui'
 import { useWorkspace } from '@/stores/workspace'
@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip
 } from 'recharts'
-import { Plus, Trash2, Camera, Image as ImageIcon, Award, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Camera, Image as ImageIcon, Award, Loader2, UserCheck, Users, X } from 'lucide-react'
 
 type Item = any
 
@@ -29,6 +29,8 @@ export default function Theme2() {
   const [form, setForm] = useState<any>({})
   const [photoUrl, setPhotoUrl] = useState('')
   const [uploading, setUploading] = useState(false)
+  // 幼儿个案追踪：按幼儿筛选本页全部好朋友故事素材
+  const [selectedKidFilter, setSelectedKidFilter] = useState<string>('all')
   const fileRef = useRef<HTMLInputElement>(null)
 
   async function load() {
@@ -89,8 +91,19 @@ export default function Theme2() {
     load()
   }
 
-  const gameDaily = items.filter(i => i.section === 'gameDaily')
-  const friendReasons = items.filter(i => i.section === 'friendReasons')
+  // 幼儿个案追踪统计与过滤
+  const kidStatsMap = useMemo(() => {
+    const map = new Map<number, number>()
+    for (const item of items) if (item.student_id) map.set(item.student_id, (map.get(item.student_id) || 0) + 1)
+    return map
+  }, [items])
+  const curKidObj = useMemo(() => selectedKidFilter === 'all' ? null : ws.students.find(s => s.id === Number(selectedKidFilter)), [ws.students, selectedKidFilter])
+  const filteredItems = useMemo(() => {
+    if (selectedKidFilter === 'all') return items
+    return items.filter(i => i.student_id === Number(selectedKidFilter))
+  }, [items, selectedKidFilter])
+  const gameDaily = filteredItems.filter(i => i.section === 'gameDaily')
+  const friendReasons = filteredItems.filter(i => i.section === 'friendReasons')
   const chartData = reasonsTop.slice(0, 6).map((r, i) => ({
     name: r.text.length > 9 ? r.text.slice(0, 9) + '…' : r.text || `理由${i + 1}`,
     票数: r.count
@@ -115,6 +128,36 @@ export default function Theme2() {
         }
       />
       <WkBar />
+
+      {/* 幼儿个案追踪控制条：保留原想念·重逢页面的追踪能力 */}
+      <Card className="mb-4 border-border/80 bg-card/60 backdrop-blur-xs">
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <UserCheck className="size-4 text-primary" /><span>幼儿个案追踪</span>
+            </div>
+            <div className="w-56">
+              <Select value={selectedKidFilter} onValueChange={setSelectedKidFilter}>
+                <SelectTrigger className="h-9 bg-background font-medium shadow-2xs"><SelectValue placeholder="请选择追踪对象" /></SelectTrigger>
+                <SelectContent className="max-h-72">
+                  <SelectItem value="all" className="font-semibold text-primary"><span className="flex items-center gap-2"><Users className="size-3.5" /> 全班全览 ({items.length} 条记录)</span></SelectItem>
+                  {ws.students.map(s => {
+                    const count = kidStatsMap.get(s.id) || 0
+                    return <SelectItem key={s.id} value={String(s.id)}><div className="flex w-full items-center justify-between gap-4"><span>{s.sid} {s.name}</span><span className={count > 0 ? 'rounded-md bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-700 dark:bg-rose-950/50 dark:text-rose-300' : 'text-[11px] text-muted-foreground'}>{count > 0 ? `${count} 条` : '暂无'}</span></div></SelectItem>
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedKidFilter !== 'all' && curKidObj && (
+              <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-1 text-xs text-rose-700 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-300">
+                <span className="font-bold">正在追踪「{curKidObj.name}」</span><span className="opacity-80">（共 {filteredItems.length} 条素材）</span>
+                <button onClick={() => setSelectedKidFilter('all')} className="rounded p-0.5 hover:bg-rose-200 dark:hover:bg-rose-900" title="切回全班"><X className="size-3" /></button>
+              </div>
+            )}
+          </div>
+          <div className="text-xs text-muted-foreground">{selectedKidFilter === 'all' ? `当前呈现全班本周 ${filteredItems.length} 条素材` : `仅展示「${curKidObj?.name}」的专属故事与记录`}</div>
+        </CardContent>
+      </Card>
 
       {/* 好朋友游戏日常 */}
       <Card className="mb-4">
