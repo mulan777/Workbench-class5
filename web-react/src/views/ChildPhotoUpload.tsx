@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useMemo } from 'react'
 import { api, upload, todayStr, weekOf } from '@/lib/api'
 import { toast } from '@/lib/ui'
 import {
-  Camera, UploadCloud, CheckCircle2, Sparkles, RefreshCw,
+  Camera, CheckCircle2, Sparkles, RefreshCw,
   Maximize, Minimize, Image as ImageIcon, Loader2, ChevronDown, ChevronUp
 } from 'lucide-react'
 
@@ -32,7 +32,6 @@ export default function ChildPhotoUpload() {
   const [isFullscreen, setIsFullscreen] = useState(false)
 
   const cameraInputRef = useRef<HTMLInputElement>(null)
-  const albumInputRef = useRef<HTMLInputElement>(null)
 
   async function loadStudents() {
     try {
@@ -110,7 +109,7 @@ export default function ChildPhotoUpload() {
       return
     }
     if (!previewUrl) {
-      toast.error('请先拍摄或选择照片')
+      toast.error('请先拍摄照片')
       return
     }
     setSubmitting(true)
@@ -175,7 +174,7 @@ export default function ChildPhotoUpload() {
             <h1 className="text-xl sm:text-2xl font-serif font-bold text-[#3c2f21] tracking-wide flex items-center gap-2">
               自主拍照台 <Camera className="size-5 text-[#e11d48] fill-[#e11d48]/20 animate-pulse" />
             </h1>
-            <p className="text-[11px] text-[#8c7e6d]">点击头像 ➔ 拍照或选图 ➔ 点击发送，记录自动同步！</p>
+            <p className="text-[11px] text-[#8c7e6d]">点击头像 ➔ 直接拍照 ➔ 预览确认，记录自动同步！</p>
           </div>
         </div>
 
@@ -292,14 +291,6 @@ export default function ChildPhotoUpload() {
               className="hidden"
               onChange={handleFileSelect}
             />
-            <input
-              ref={albumInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleFileSelect}
-            />
-
             {/* 超大取景预览框 */}
             <div className="my-3 flex-1 min-h-[260px] sm:min-h-[340px] rounded-2xl border-2 border-dashed border-[#d8cdb5] bg-[#faf7ee] flex flex-col items-center justify-center overflow-hidden relative shadow-inner">
               {uploading ? (
@@ -331,33 +322,18 @@ export default function ChildPhotoUpload() {
 
             {/* 大号触控按钮组 */}
             <div className="flex flex-col gap-3">
-              <div className="grid grid-cols-2 gap-3.5">
-                <button
-                  type="button"
-                  disabled={!selectedKid || uploading}
-                  onClick={() => cameraInputRef.current?.click()}
-                  className={`flex items-center justify-center gap-2 py-4 rounded-2xl font-serif font-bold text-base transition shadow-sm ${
-                    !selectedKid
-                      ? 'bg-[#f4efe4] text-[#a89b88] cursor-not-allowed'
-                      : 'bg-[#be123c] text-white hover:bg-[#9f1239] active:scale-98 shadow-md ring-3 ring-[#f43f5e]/30'
-                  }`}
-                >
-                  <Camera className="size-5.5" /> 开启拍照
-                </button>
-
-                <button
-                  type="button"
-                  disabled={!selectedKid || uploading}
-                  onClick={() => albumInputRef.current?.click()}
-                  className={`flex items-center justify-center gap-2 py-4 rounded-2xl font-serif font-bold text-base transition border shadow-sm ${
-                    !selectedKid
-                      ? 'bg-[#f4efe4] text-[#a89b88] cursor-not-allowed border-[#e2d8c3]'
-                      : 'bg-white border-[#d8cdb5] text-[#4a3f31] hover:bg-[#fbf7ea] active:scale-98'
-                  }`}
-                >
-                  <UploadCloud className="size-5.5" /> 从相册选
-                </button>
-              </div>
+              <button
+                type="button"
+                disabled={!selectedKid || uploading}
+                onClick={() => cameraInputRef.current?.click()}
+                className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-serif font-bold text-base transition shadow-sm ${
+                  !selectedKid
+                    ? 'bg-[#f4efe4] text-[#a89b88] cursor-not-allowed'
+                    : 'bg-[#be123c] text-white hover:bg-[#9f1239] active:scale-98 shadow-md ring-3 ring-[#f43f5e]/30'
+                }`}
+              >
+                <Camera className="size-5.5" /> 开启拍照
+              </button>
 
               <button
                 type="button"
