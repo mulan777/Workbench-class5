@@ -128,3 +128,18 @@ CREATE TABLE IF NOT EXISTS checkin_ai_analyses (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_ai_analysis_created ON checkin_ai_analyses(created_at DESC);
+
+-- 儿童端当天交友邀请：儿童端只读取当天，历史记录保留供教师追溯
+CREATE TABLE IF NOT EXISTS area_invitations (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  date TEXT NOT NULL,
+  week INTEGER NOT NULL,
+  inviter_student_id INTEGER NOT NULL REFERENCES students(id),
+  invitee_student_id INTEGER NOT NULL REFERENCES students(id),
+  area TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  responded_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_area_invitee_day ON area_invitations(date, invitee_student_id, status);
+CREATE INDEX IF NOT EXISTS idx_area_inviter_day ON area_invitations(date, inviter_student_id, status);

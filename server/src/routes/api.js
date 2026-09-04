@@ -1,3 +1,4 @@
+function chinaToday() { return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Shanghai', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()) }
 function maskStudentName(name) { const v=String(name||''); return v ? v[0]+'*' : v }
 function maskStudentFields(row) { if (!row || typeof row !== 'object') return row; const out={...row}; for (const k of ['name','an','bn','student_name','studentName','friend_name','friendName']) if (out[k]) out[k]=maskStudentName(out[k]); return out }
 
@@ -68,7 +69,7 @@ export default async function miscRoutes(app) {
   })
 
   // 名册
-  app.get('/api/students', { preHandler: [app.auth] }, async () => {
+  app.get('/api/students', async () => {
     return app.db.prepare('SELECT id,sid,name,avatar,active FROM students ORDER BY sid').all().map(maskStudentFields)
   })
   app.put('/api/students/:id', { preHandler: [app.auth] }, async (req, reply) => {
@@ -215,7 +216,7 @@ export default async function miscRoutes(app) {
     }
     const tx = app.db.transaction(() => {
       const info = app.db.prepare('INSERT INTO checkins(date,photo_path,note,created_by) VALUES (?,?,?,?)')
-        .run(date, photoPath || null, note || null, req.user.sub ? Number(req.user.sub) : 1)
+        .run(date, photoPath || null, note || null, req.user?.sub ? Number(req.user.sub) : 1)
       const ins = app.db.prepare('INSERT INTO checkin_pairs(checkin_id,student_a,student_b) VALUES (?,?,?)')
       for (const [a, b] of pairIds) ins.run(info.lastInsertRowid, a, b)
       return info.lastInsertRowid
@@ -241,22 +242,74 @@ export default async function miscRoutes(app) {
   })
 
 
+  // 儿童端交友邀请：所有状态严格限定服务器当天
+  app.post('/api/area-selection/invitations', async (req, reply) => {
+    const today = chinaToday()
+    const inviterId = Number(req.body?.inviterStudentId)
+    const inviteeId = Number(req.body?.inviteeStudentId)
+    const area = String(req.body?.area || '').trim()
+    if (!inviterId || !inviteeId || inviterId === inviteeId || !area) return reply.code(400).send({ error: '邀请参数错误' })
+    const inviter = app.db.prepare('SELECT id,name,active FROM students WHERE id=?').get(inviterId)
+    const invitee = app.db.prepare('SELECT id,name,active FROM students WHERE id=?').get(inviteeId)
+    const areaRow = app.db.prepare('SELECT name FROM area_settings WHERE name=?').get(area)
+    if (!inviter?.active || !invitee?.active || !areaRow) return reply.code(400).send({ error: '幼儿或区域不存在' })
+    if (app.db.prepare(`SELECT 1 FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).get(inviteeId, today, today)) return reply.code(409).send({ error: '对方今天已经选好区域了' })
+    const week = Number(req.body?.week) || 1
+    const tx = app.db.transaction(() => {
+      app.db.prepare(`UPDATE area_invitations SET status='cancelled',responded_at=datetime('now') WHERE date=? AND (inviter_student_id=? OR invitee_student_id=?) AND status='pending'`).run(today, inviterId, inviteeId)
+      app.db.prepare(`DELETE FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).run(inviterId, today, today)
+      app.db.prepare(`INSERT INTO area_records(week,date,area,student_id,type,created_by) VALUES (?,?,?,?,'自主选区·邀请',1)`).run(week, today, areaRow.name, inviterId)
+      const r = app.db.prepare(`INSERT INTO area_invitations(date,week,inviter_student_id,invitee_student_id,area,status) VALUES (?,?,?,?,?,'pending')`).run(today, week, inviterId, inviteeId, areaRow.name)
+      return r.lastInsertRowid
+    })
+    return { ok: true, id: tx(), date: today, area: areaRow.name }
+  })
+
+  app.post('/api/area-selection/invitations/:id/accept', async (req, reply) => {
+    const today = chinaToday()
+    const id = Number(req.params.id)
+    const row = app.db.prepare(`SELECT * FROM area_invitations WHERE id=? AND date=? AND status='pending'`).get(id, today)
+    if (!row) return reply.code(404).send({ error: '邀请已失效' })
+    const already = app.db.prepare(`SELECT 1 FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).get(row.invitee_student_id, today, today)
+    if (already) return reply.code(409).send({ error: '你今天已经选好区域了' })
+    const tx = app.db.transaction(() => {
+      app.db.prepare(`DELETE FROM area_records WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).run(row.invitee_student_id, today, today)
+      const inviter = app.db.prepare('SELECT name FROM students WHERE id=?').get(row.inviter_student_id)
+      const invitee = app.db.prepare('SELECT name FROM students WHERE id=?').get(row.invitee_student_id)
+      app.db.prepare(`INSERT INTO area_records(week,date,area,student_id,partner_name,type,created_by) VALUES (?,?,?,?,?,'自主选区·受邀',1)`).run(row.week, today, row.area, row.invitee_student_id, inviter?.name || null)
+      app.db.prepare(`UPDATE area_records SET partner_name=? WHERE student_id=? AND (date=? OR (date IS NULL AND date(created_at)=?))`).run(invitee?.name || null, row.inviter_student_id, today, today)
+      app.db.prepare(`UPDATE area_invitations SET status='accepted',responded_at=datetime('now') WHERE id=?`).run(id)
+      app.db.prepare(`UPDATE area_invitations SET status='cancelled',responded_at=datetime('now') WHERE date=? AND invitee_student_id=? AND status='pending' AND id<>?`).run(today, row.invitee_student_id, id)
+    })
+    tx()
+    return { ok: true, area: row.area, inviterStudentId: row.inviter_student_id }
+  })
+
+  app.post('/api/area-selection/invitations/:id/reject', async (req, reply) => {
+    const today = chinaToday()
+    const id = Number(req.params.id)
+    const r = app.db.prepare(`UPDATE area_invitations SET status='rejected',responded_at=datetime('now') WHERE id=? AND date=? AND status='pending'`).run(id, today)
+    if (!r.changes) return reply.code(404).send({ error: '邀请已失效' })
+    return { ok: true }
+  })
+
   // 区域选区（儿童自主选区 & 今日选区分布）
   app.get('/api/area-selection/today', async (req, reply) => {
     seedAreas(app.db)
-    const date = String(req.query?.date || new Date().toISOString().slice(0, 10))
+    const date = chinaToday()
     const week = Number(req.query?.week) || 1
     const areas = app.db.prepare('SELECT id,name,emoji,sort FROM area_settings ORDER BY sort,id').all()
     const students = app.db.prepare('SELECT id,sid,name,avatar FROM students WHERE active=1 ORDER BY sid').all()
     
     // 今日选区记录
     const records = app.db.prepare(`
-      SELECT r.id, r.week, r.date, r.area, r.student_id, r.created_at, s.name student_name, s.avatar student_avatar, s.sid
+      SELECT r.id, r.week, r.date, r.area, r.student_id, r.partner_name, r.created_at, s.name student_name, s.avatar student_avatar, s.sid
       FROM area_records r
       JOIN students s ON s.id=r.student_id
       WHERE r.date=? OR (r.date IS NULL AND date(r.created_at)=?)`).all(date, date)
 
-    return { date, week, areas, students:students.map(maskStudentFields), records:records.map(maskStudentFields) }
+    const invitations = app.db.prepare(`SELECT i.id,i.date,i.week,i.area,i.status,i.inviter_student_id,i.invitee_student_id,s.name inviter_name,s.avatar inviter_avatar FROM area_invitations i JOIN students s ON s.id=i.inviter_student_id WHERE i.date=? AND i.status='pending' ORDER BY i.id DESC`).all(date)
+    return { date, week, areas, students:students.map(maskStudentFields), records:records.map(maskStudentFields), invitations:invitations.map(maskStudentFields) }
   })
 
   // 儿童自主选区（拖拽提交 / 调整区域 / 移除）
@@ -267,7 +320,7 @@ export default async function miscRoutes(app) {
     const stu = app.db.prepare('SELECT id,name,active FROM students WHERE id=?').get(stuId)
     if (!stu || !stu.active) return reply.code(400).send({ error: '该幼儿不存在或已停用' })
 
-    const date = String(reqDate || new Date().toISOString().slice(0, 10))
+    const date = chinaToday()
     // 计算当前第几周 (默认按 2026-09-01 起算或前端传参)
     let week = Number(reqWeek)
     if (!week) {
@@ -373,8 +426,9 @@ export default async function miscRoutes(app) {
   })
 
   // 素材墙 theme1/2/3
-  app.get('/api/theme/:wall', { preHandler: [app.auth] }, async (req) => {
+  app.get('/api/theme/:wall', async (req, reply) => {
     const wall = req.params.wall
+    if (wall !== 'theme1') { await app.auth(req, reply); if (reply.sent) return }
     if (!['theme1', 'theme2', 'theme3'].includes(wall)) return reply.code(404).send({ error: '板块不存在' })
     const week = Number(req.query.week)
     const studentId = req.query.studentId ? Number(req.query.studentId) : null;
@@ -384,8 +438,9 @@ export default async function miscRoutes(app) {
       WHERE wall=? AND (? IS NULL OR week=?) AND (? IS NULL OR ti.student_id=?) ORDER BY ti.created_at DESC`).all(wall, weekParam, weekParam, studentId, studentId)
     return rows.map(maskStudentFields)
   })
-  app.post('/api/theme/:wall', { preHandler: [app.auth] }, async (req, reply) => {
+  app.post('/api/theme/:wall', async (req, reply) => {
     const wall = req.params.wall
+    if (wall !== 'theme1') { await app.auth(req, reply); if (reply.sent) return }
     if (!['theme1', 'theme2', 'theme3'].includes(wall)) return reply.code(404).send({ error: '板块不存在' })
     const b = req.body || {}
     const info = app.db.prepare(`INSERT INTO theme_items(week,wall,section,type,student_id,friend_name,content,note,extra_json,photo_path,created_by)
